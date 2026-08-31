@@ -54,6 +54,22 @@ export default function App() {
     { number: '01704814095', password: 'password123', name: 'URTamjid', email: 'urtamjid5@gmail.com', uid: 'GMHF84', depositBalance: 300.00, winningBalance: 200.00, totalDeposited: 300.00, totalWithdrawn: 0.00 }
   ]);
 
+  // Load all registered users from Firestore when the app starts
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'users'));
+        if (!snapshot.empty) {
+          const usersFromDb = snapshot.docs.map(d => d.data());
+          setRegisteredUsers(usersFromDb);
+        }
+      } catch (err) {
+        console.error('Failed to load users from Firestore:', err);
+      }
+    };
+    loadUsers();
+  }, []);
+
   const getUserBalance = (uid) => {
     if (uid === user.uid) return { depositBalance: user.depositBalance, winningBalance: user.winningBalance, totalDeposited: user.totalDeposited || 0 };
     const found = registeredUsers.find(u => u.uid === uid);
