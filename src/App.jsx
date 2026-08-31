@@ -1726,6 +1726,8 @@ ${buildUserContextBrief(uid)}`;
     const { type, item } = rejectModalData;
     if (type === 'deposit') setPendingDeposits(pendingDeposits.filter(d => d.id !== item.id));
     if (type === 'withdrawal') setPendingWithdrawals(pendingWithdrawals.filter(w => w.id !== item.id));
+    if (type === 'deposit') deleteDoc(doc(db, 'pendingDeposits', item.id)).catch(e => console.error(e));
+if (type === 'withdrawal') deleteDoc(doc(db, 'pendingWithdrawals', item.id)).catch(e => console.error(e));
     if (type === 'order') {
       // Refund exactly what was deducted at order time, and keep the order visible with a rejected status.
       applyBalanceChange(item.uid, { deposit: item.deductedDeposit || 0, winning: item.deductedWinning || 0 });
