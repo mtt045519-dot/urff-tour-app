@@ -1355,6 +1355,7 @@ export default function App() {
   const handleApproveDeposit = (dep) => {
     applyBalanceChange(dep.uid, { deposit: dep.amount, totalDeposited: dep.amount });
     setPendingDeposits(pendingDeposits.filter(d => d.id !== dep.id));
+    deleteDoc(doc(db, 'pendingDeposits', dep.id)).catch(e => console.error(e));
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Deposit Approved', message: `Apnar ${dep.amount} Taka deposit request approve hoyeche.`, time: 'Just now', targetUid: dep.uid }, ...prev]);
     showToast('Deposit approve kora hoyeche!');
   };
