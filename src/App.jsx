@@ -801,6 +801,7 @@ export default function App() {
       return;
     }
     setPendingDeposits([{ id: 'dep_' + Date.now(), uid: user.uid, name: user.name, amount: amt, method: paymentMethod, trxId: trxIdInput }, ...pendingDeposits]);
+    setDoc(doc(db, 'pendingDeposits', 'dep_' + Date.now()), { id: 'dep_' + Date.now(), uid: user.uid, name: user.name, amount: amt, method: paymentMethod, trxId: trxIdInput }).catch(e => console.error(e));
     setWalletAction(null);
     setAmountInput('');
     setTrxIdInput('');
