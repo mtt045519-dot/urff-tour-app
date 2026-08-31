@@ -5,7 +5,7 @@ import {
   Gamepad2, Shield, AlertCircle, Copy, Check, Lock, Send, Bot, Power, Trash2, Edit3, Image as ImageIcon, CheckCircle2, XCircle, Bell, Home, Users, Crosshair, MapPin, Clock, Upload, Camera, Save, Search, Ban
 } from 'lucide-react';
 import { db } from './firebase';
-import { collection, doc, getDocs, setDoc, updateDoc, increment } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, updateDoc, increment, deleteDoc } from 'firebase/firestore';
 
 const PAYMENT_NUMBER = '01704814095';
 const ADMIN_PASSWORD = 'ttaammjjiidd';
