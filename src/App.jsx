@@ -98,6 +98,12 @@ export default function App() {
         totalWithdrawn: (u.totalWithdrawn || 0) + totalWithdrawn,
       } : u));
     }
+    updateDoc(doc(db, 'users', uid), {
+      depositBalance: increment(deposit),
+      winningBalance: increment(winning),
+      totalDeposited: increment(totalDeposited),
+      totalWithdrawn: increment(totalWithdrawn),
+    }).catch(err => console.error('Failed to sync balance:', err));
   };
 
   // UI States
