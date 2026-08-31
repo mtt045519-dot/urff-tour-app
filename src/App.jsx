@@ -607,6 +607,7 @@ export default function App() {
     };
 
     setRegisteredUsers([...registeredUsers, newUserObj]);
+    setDoc(doc(db, 'users', newUserObj.uid), newUserObj).catch(err => console.error('Failed to save user:', err));
     setUser({
       name: regUsername,
       number: regNumber,
