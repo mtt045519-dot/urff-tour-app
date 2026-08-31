@@ -1373,6 +1373,7 @@ export default function App() {
     }
     applyBalanceChange(wit.uid, { winning: -deductWinning, deposit: -deductDeposit, totalWithdrawn: wit.amount });
     setPendingWithdrawals(pendingWithdrawals.filter(w => w.id !== wit.id));
+    deleteDoc(doc(db, 'pendingWithdrawals', wit.id)).catch(e => console.error(e));
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Withdraw Approved', message: `Apnar ${wit.amount} Taka withdraw request approve hoyeche.`, time: 'Just now', targetUid: wit.uid }, ...prev]);
     showToast('Withdraw approve kora hoyeche!');
   };
