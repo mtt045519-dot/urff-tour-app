@@ -282,6 +282,19 @@ export default function App() {
   const [pendingWithdrawals, setPendingWithdrawals] = useState([
     { id: 'wit_1', uid: 'GMHF84', name: 'URTamjid', number: '01704814095', amount: 100, method: 'bKash', account: '01704814095', depositBalance: 300, winningBalance: 200, totalDeposited: 300 }
   ]);
+  useEffect(() => {
+    const loadPending = async () => {
+      try {
+        const depSnap = await getDocs(collection(db, 'pendingDeposits'));
+        if (!depSnap.empty) setPendingDeposits(depSnap.docs.map(d => d.data()));
+        const witSnap = await getDocs(collection(db, 'pendingWithdrawals'));
+        if (!witSnap.empty) setPendingWithdrawals(witSnap.docs.map(d => d.data()));
+      } catch (err) {
+        console.error('Failed to load pending requests:', err);
+      }
+    };
+    loadPending();
+  }, []);
 
   const [pendingShopOrders, setPendingShopOrders] = useState([
     { id: 'ord_1', uid: 'GMHF84', name: 'URTamjid', number: '01704814095', type: 'diamond', itemTitle: '200 Free Fire Like', price: 20, ffUid: '87654321', deliveryName: '', deliveryPhone: '', deliveryAddress: '', deliveryMethod: '', deductedDeposit: 20, deductedWinning: 0, depositBalance: 300, winningBalance: 200, totalDeposited: 300, status: 'pending', rejectReason: '' }
