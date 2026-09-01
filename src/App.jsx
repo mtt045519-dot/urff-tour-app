@@ -664,6 +664,18 @@ export default function App() {
       ]
     },
   ]);
+  const setShopItemsSynced = (updater) => {
+    setShopItems(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      next.forEach(item => setDoc(doc(db, 'shopItems', String(item.id)), item).catch(e => console.error(e)));
+      return next;
+    });
+  };
+  useEffect(() => {
+    getDocs(collection(db, 'shopItems')).then(snap => {
+      if (!snap.empty) setShopItems(snap.docs.map(d => d.data()));
+    }).catch(e => console.error(e));
+  }, []);
 
   const handleRegister = () => {
     if (!regUsername || !regNumber || !regPassword || !regGmail) {
