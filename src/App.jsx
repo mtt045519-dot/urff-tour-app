@@ -516,7 +516,19 @@ export default function App() {
       ]
     }
   ]);
-
+  
+  useEffect(() => {
+    const loadTournaments = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'tournaments'));
+        if (!snap.empty) setTournaments(snap.docs.map(d => d.data()));
+      } catch (err) {
+        console.error('Failed to load tournaments:', err);
+      }
+    };
+    loadTournaments();
+  }, []);
+ 
   // Auto-generate today's matches from any "Command to Automated" templates. Runs on load
   // and then rechecks periodically, so it also catches the day rolling over while the app
   // stays open. Note: this only fires while the app is actually open — it's a client-only
