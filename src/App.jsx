@@ -1380,7 +1380,7 @@ export default function App() {
     const featuresArr = newShopFeatures.split('\n').map(s => s.trim()).filter(Boolean);
     const imagesArr = [newShopImage, ...newShopExtraImages].filter(Boolean);
     if (editingShopId) {
-      setShopItems(shopItems.map(i => i.id === editingShopId ? {
+     setShopItemsSynced(shopItems.map(i => i.id === editingShopId ? {
         ...i,
         title: newShopTitle,
         price: parseFloat(newShopPrice),
@@ -1397,7 +1397,7 @@ export default function App() {
       } : i));
       showToast('Shop item updated!');
     } else {
-      setShopItems([{
+      setShopItemsSynced([{
         id: 'd_' + Date.now(),
         title: newShopTitle,
         type: newShopType,
@@ -1435,7 +1435,7 @@ export default function App() {
   };
 
   const handleDeleteShopItem = (id) => {
-    setShopItems(shopItems.filter(i => i.id !== id));
+   setShopItemsSynced(shopItems.filter(i => i.id !== id));
     showToast('Shop item remove kora hoyeche!');
   };
 
