@@ -294,9 +294,21 @@ export default function App() {
     { id: 'dep_1', uid: 'GMHF84', name: 'URTamjid', amount: 200, method: 'bKash', trxId: '9N876XVC' }
   ]);
 
-  const [pendingWithdrawals, setPendingWithdrawals] = useState([
-    { id: 'wit_1', uid: 'GMHF84', name: 'URTamjid', number: '01704814095', amount: 100, method: 'bKash', account: '01704814095', depositBalance: 300, winningBalance: 200, totalDeposited: 300 }
+  const [pendingShopOrders, _setPendingShopOrders] = useState([
+    { id: 'ord_1', uid: 'GMHF84', name: 'URTamjid', number: '01704814095', type: 'diamond', itemTitle: '200 Free Fire Like', price: 20, ffUid: '87654321', deliveryName: '', deliveryPhone: '', deliveryAddress: '', deliveryMethod: '', deductedDeposit: 20, deductedWinning: 0, depositBalance: 300, winningBalance: 200, totalDeposited: 300, status: 'pending', rejectReason: '' }
   ]);
+  const setPendingShopOrders = (updater) => {
+    _setPendingShopOrders(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      next.forEach(o => setDoc(doc(db, 'shopOrders', String(o.id)), o).catch(e => console.error(e)));
+      return next;
+    });
+  };
+  useEffect(() => {
+    getDocs(collection(db, 'shopOrders')).then(snap => {
+      if (!snap.empty) _setPendingShopOrders(snap.docs.map(d => d.data()));
+    }).catch(e => console.error(e));
+  }, []);
   useEffect(() => {
     const loadPending = async () => {
       try {
