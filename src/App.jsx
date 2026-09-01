@@ -45,9 +45,24 @@ export default function App() {
     totalWithdrawn: 0.00,
   });
 
-  const [userNotifications, setUserNotifications] = useState([
+  const [userNotifications, _setUserNotifications] = useState([
     { id: 'not_' + Date.now(), title: 'Welcome to UR FF Tour!', message: 'Registration successful. Enjoy tournaments and win prizes.', time: 'Today', targetUid: 'GMHF84' }
   ]);
+  const setUserNotifications = (updater) => {
+    _setUserNotifications(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      const prevIds = new Set(prev.map(n => n.id));
+      next.filter(n => !prevIds.has(n.id)).forEach(n => {
+        setDoc(doc(db, 'notifications', String(n.id)), n).catch(e => console.error(e));
+      });
+      return next;
+    });
+  };
+  useEffect(() => {
+    getDocs(collection(db, 'notifications')).then(snap => {
+      if (!snap.empty) _setUserNotifications(snap.docs.map(d => d.data()));
+    }).catch(e => console.error(e));
+  }, []);
   const [showNotifications, setShowNotifications] = useState(false);
 
   const [registeredUsers, setRegisteredUsers] = useState([
