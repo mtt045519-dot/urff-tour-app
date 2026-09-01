@@ -328,7 +328,25 @@ export default function App() {
   ]);
 
   // Match Participants & Results State
-  const [matchParticipants, setMatchParticipants] = useState({});
+  const [matchParticipants, _setMatchParticipants] = useState({});
+  const setMatchParticipants = (updater) => {
+    _setMatchParticipants(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      Object.keys(next).forEach(matchId => {
+        setDoc(doc(db, 'matchParticipants', matchId), { list: next[matchId] }).catch(e => console.error(e));
+      });
+      return next;
+    });
+  };
+  useEffect(() => {
+    getDocs(collection(db, 'matchParticipants')).then(snap => {
+      if (!snap.empty) {
+        const obj = {};
+        snap.docs.forEach(d => { obj[d.id] = d.data().list; });
+        _setMatchParticipants(obj);
+      }
+    }).catch(e => console.error(e));
+  }, []);
   const isJoinedByMe = (matchId) => (matchParticipants[matchId] || []).some(p => p.accountUid === user.uid);
   const [matchResultsModal, setMatchResultsModal] = useState(null);
   const [winnerEntries, setWinnerEntries] = useState([
