@@ -1153,6 +1153,7 @@ export default function App() {
     };
     setUser(prev => ({ ...prev, ...patch }));
     setRegisteredUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, ...patch } : u));
+        updateDoc(doc(db, 'users', user.uid), patch).catch(e => console.error(e));
     setShowProfileSettings(false);
     showToast('Profile update kora hoyeche!');
   };
