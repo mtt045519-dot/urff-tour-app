@@ -782,6 +782,7 @@ export default function App() {
     applyBalanceChange(user.uid, { deposit: -deductDeposit, winning: -deductWinning });
 
     setTournaments(tournaments.map(m => m.id === selectedMatch.id ? { ...m, slotsFilled: m.slotsFilled + playerCount } : m));
+    updateDoc(doc(db, 'tournaments', selectedMatch.id), { slotsFilled: increment(playerCount) }).catch(e => console.error(e));
 
     const pList = matchParticipants[selectedMatch.id] || [];
     setMatchParticipants({
