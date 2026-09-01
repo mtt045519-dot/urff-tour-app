@@ -124,11 +124,24 @@ export default function App() {
   // UI States
   const [darkMode, setDarkMode] = useState(true);
   const [showBanner, setShowBanner] = useState(true);
-  const [banners, setBanners] = useState([
+  const [banners, _setBanners] = useState([
     { image: '', title: 'Win Big in Free Fire Tournaments!', subtitle: 'Join now & compete with the best' },
     { image: '', title: '', subtitle: '' },
     { image: '', title: '', subtitle: '' },
   ]);
+  const setBanners = (updater) => {
+    _setBanners(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      setDoc(doc(db, 'appData', 'banners'), { list: next }).catch(e => console.error(e));
+      return next;
+    });
+  };
+  useEffect(() => {
+    getDocs(collection(db, 'appData')).then(snap => {
+      const bannersDoc = snap.docs.find(d => d.id === 'banners');
+      if (bannersDoc) _setBanners(bannersDoc.data().list);
+    }).catch(e => console.error(e));
+  }, []);
   const [bannerCarouselIndex, setBannerCarouselIndex] = useState(0);
   const [logoUrl, setLogoUrl] = useState(LOGO_URL);
   const [appSettings, setAppSettings] = useState({
