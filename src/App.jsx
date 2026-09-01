@@ -1183,6 +1183,8 @@ export default function App() {
         mode: newTourMode,
         prizeTable: cleanPrizeTable
       } : m));
+      const updatedT = tournaments.find(m => m.id === editingTourId);
+      setDoc(doc(db, 'tournaments', editingTourId), { ...updatedT, title: newTourTitle, prizePool: parseFloat(newTourPrize), entryFee: parseFloat(newTourFee) }).catch(e => console.error(e));
       showToast('Tournament updated!');
     } else {
       const newT = {
