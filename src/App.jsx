@@ -336,10 +336,7 @@ export default function App() {
     loadPending();
   }, []);
 
-  const [pendingShopOrders, setPendingShopOrders] = useState([
-    { id: 'ord_1', uid: 'GMHF84', name: 'URTamjid', number: '01704814095', type: 'diamond', itemTitle: '200 Free Fire Like', price: 20, ffUid: '87654321', deliveryName: '', deliveryPhone: '', deliveryAddress: '', deliveryMethod: '', deductedDeposit: 20, deductedWinning: 0, depositBalance: 300, winningBalance: 200, totalDeposited: 300, status: 'pending', rejectReason: '' }
-  ]);
-
+  
   // Match Participants & Results State
   const [matchParticipants, _setMatchParticipants] = useState({});
   const setMatchParticipants = (updater) => {
