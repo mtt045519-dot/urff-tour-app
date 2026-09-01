@@ -1243,6 +1243,7 @@ export default function App() {
 
   const handleDeleteTournament = (id) => {
     setTournaments(tournaments.filter(t => t.id !== id));
+    deleteDoc(doc(db, 'tournaments', id)).catch(e => console.error(e));
     showToast('Tournament remove kora hoyeche!');
   };
 
