@@ -1206,6 +1206,7 @@ export default function App() {
         prizeTable: cleanPrizeTable
       };
       setTournaments([newT, ...tournaments]);
+            setDoc(doc(db, 'tournaments', newT.id), newT).catch(e => console.error(e));
       showToast('Tournament added!');
     }
 
