@@ -494,6 +494,19 @@ export default function App() {
     { id: 'cat_losttowin', name: 'Lost to Win', image: '' },
     { id: 'cat_cs', name: 'CS 1v1 / 2v2', image: '' },
   ]);
+    const setMatchCategoriesSynced = (updater) => {
+    setMatchCategories(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      setDoc(doc(db, 'appData', 'matchCategories'), { list: next }).catch(e => console.error(e));
+      return next;
+    });
+  };
+  useEffect(() => {
+    getDocs(collection(db, 'appData')).then(snap => {
+      const catDoc = snap.docs.find(d => d.id === 'matchCategories');
+      if (catDoc) setMatchCategories(catDoc.data().list);
+    }).catch(e => console.error(e));
+  }, []);
   const [automatedTemplates, setAutomatedTemplates] = useState([]);
 
   const [tournaments, setTournaments] = useState([
