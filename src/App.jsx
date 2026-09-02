@@ -904,8 +904,10 @@ export default function App() {
       return;
     }
 
-    setPendingWithdrawals([{ id: 'wit_' + Date.now(), uid: user.uid, name: user.name, number: user.number, amount: amt, method: paymentMethod, account: withdrawAccountInput, depositBalance: user.depositBalance, winningBalance: user.winningBalance, totalDeposited: user.totalDeposited || 0 }, ...pendingWithdrawals]);
-    setDoc(doc(db, 'pendingWithdrawals', 'wit_' + Date.now()), { id: 'wit_' + Date.now(), uid: user.uid, name: user.name, number: user.number, amount: amt, method: paymentMethod, account: withdrawAccountInput, depositBalance: user.depositBalance, winningBalance: user.winningBalance, totalDeposited: user.totalDeposited || 0 }).catch(e => console.error(e));
+       const witId = 'wit_' + Date.now();
+    const witObj = { id: witId, uid: user.uid, name: user.name, number: user.number, amount: amt, method: paymentMethod, account: withdrawAccountInput, depositBalance: user.depositBalance, winningBalance: user.winningBalance, totalDeposited: user.totalDeposited || 0 };
+    setPendingWithdrawals([witObj, ...pendingWithdrawals]);
+    setDoc(doc(db, 'pendingWithdrawals', witId), witObj).catch(e => console.error(e));
     setWalletAction(null);
     setAmountInput('');
     setWithdrawAccountInput('');
