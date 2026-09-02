@@ -1213,10 +1213,10 @@ export default function App() {
       return;
     }
     if (editingCategoryId) {
-      setMatchCategories(prev => prev.map(c => c.id === editingCategoryId ? { ...c, name: newCategoryName.trim(), image: newCategoryImage || c.image } : c));
+      setMatchCategoriesSynced(prev => prev.map(c => c.id === editingCategoryId ? { ...c, name: newCategoryName.trim(), image: newCategoryImage || c.image } : c));
       showToast('Category update kora hoyeche!');
     } else {
-      setMatchCategories(prev => [...prev, { id: 'cat_' + Date.now(), name: newCategoryName.trim(), image: newCategoryImage }]);
+      setMatchCategoriesSynced(prev => [...prev, { id: 'cat_' + Date.now(), name: newCategoryName.trim(), image: newCategoryImage }]);
       showToast('Notun category add kora hoyeche!');
     }
     resetCategoryForm();
@@ -1233,7 +1233,7 @@ export default function App() {
       showToast('Ei category te tournament ache — age segulo shorao ba onno category te dao');
       return;
     }
-    setMatchCategories(prev => prev.filter(c => c.id !== id));
+    setMatchCategoriesSynced(prev => prev.filter(c => c.id !== id));
     showToast('Category remove kora hoyeche!');
   };
 
