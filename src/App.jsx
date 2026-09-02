@@ -203,7 +203,25 @@ export default function App() {
   const [showInviteFriends, setShowInviteFriends] = useState(false);
   const [showAppDeveloper, setShowAppDeveloper] = useState(false);
   const [showAskProblem, setShowAskProblem] = useState(false);
-  const [supportChats, setSupportChats] = useState({}); // { [uid]: { messages: [{sender, text, time}], aiEnabled } }
+   const [supportChats, _setSupportChats] = useState({});
+  const setSupportChats = (updater) => {
+    _setSupportChats(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      Object.keys(next).forEach(uid => {
+        setDoc(doc(db, 'supportChats', uid), next[uid]).catch(e => console.error(e));
+      });
+      return next;
+    });
+  };
+  useEffect(() => {
+    getDocs(collection(db, 'supportChats')).then(snap => {
+      if (!snap.empty) {
+        const obj = {};
+        snap.docs.forEach(d => { obj[d.id] = d.data(); });
+        _setSupportChats(obj);
+      }
+    }).catch(e => console.error(e));
+  }, []);
   const [supportChatInput, setSupportChatInput] = useState('');
   const [supportChatLoading, setSupportChatLoading] = useState(false);
   const [adminSupportSelectedUid, setAdminSupportSelectedUid] = useState(null);
