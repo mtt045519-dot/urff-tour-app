@@ -365,7 +365,25 @@ export default function App() {
     { name: 'URTamjid', accountUid: 'GMHF84', rank: '1', prize: '200', points: '15' }
   ]);
   // Structured, queryable results history: { [matchId]: { title, category, declaredAt, winners: [{name, accountUid, rank, prize, points}] } }
-  const [matchResultsHistory, setMatchResultsHistory] = useState({});
+    const [matchResultsHistory, _setMatchResultsHistory] = useState({});
+  const setMatchResultsHistory = (updater) => {
+    _setMatchResultsHistory(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      Object.keys(next).forEach(matchId => {
+        setDoc(doc(db, 'matchResults', matchId), next[matchId]).catch(e => console.error(e));
+      });
+      return next;
+    });
+  };
+  useEffect(() => {
+    getDocs(collection(db, 'matchResults')).then(snap => {
+      if (!snap.empty) {
+        const obj = {};
+        snap.docs.forEach(d => { obj[d.id] = d.data(); });
+        _setMatchResultsHistory(obj);
+      }
+    }).catch(e => console.error(e));
+  }, []);
   const [showAllResults, setShowAllResults] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboardPeriod, setLeaderboardPeriod] = useState('monthly'); // weekly | monthly | alltime
