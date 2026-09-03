@@ -540,10 +540,10 @@ export default function App() {
     });
   };
   useEffect(() => {
-    getDocs(collection(db, 'appData')).then(snap => {
-      const catDoc = snap.docs.find(d => d.id === 'matchCategories');
-      if (catDoc) setMatchCategories(catDoc.data().list);
-    }).catch(e => console.error(e));
+    const unsub = onSnapshot(doc(db, 'appData', 'matchCategories'), (snap) => {
+      if (snap.exists()) setMatchCategories(snap.data().list);
+    }, (e) => console.error('Category sync error:', e));
+    return () => unsub();
   }, []);
   const [automatedTemplates, setAutomatedTemplates] = useState([]);
 
