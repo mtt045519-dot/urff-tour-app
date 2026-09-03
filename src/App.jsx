@@ -1288,25 +1288,26 @@ export default function App() {
       .filter(row => row.label.trim() && row.amount !== '')
       .map(row => ({ label: row.label.trim(), amount: parseFloat(row.amount) || 0 }));
 
-    if (editingTourId) {
-      setTournaments(tournaments.map(m => m.id === editingTourId ? {
-        ...m,
+   if (editingTourId) {
+      const oldT = tournaments.find(m => m.id === editingTourId);
+      const updatedT = {
+        ...oldT,
         title: newTourTitle,
-        time: formattedTime || m.time,
+        time: formattedTime || oldT.time,
         prizePool: parseFloat(newTourPrize),
         entryFee: parseFloat(newTourFee),
         perKill: newTourPerKill.trim() === '' ? 10 : parseFloat(newTourPerKill),
         totalSlots: slotsNum,
-        rules: newTourRules || m.rules,
-        roomInfo: { id: newTourRoomId || m.roomInfo.id, pass: newTourPass || m.roomInfo.pass },
-        image: newTourImage || m.image,
+        rules: newTourRules || oldT.rules,
+        roomInfo: { id: newTourRoomId || oldT.roomInfo.id, pass: newTourPass || oldT.roomInfo.pass },
+        image: newTourImage || oldT.image,
         categoryId: newTourCategoryId,
         category: catName,
         mode: newTourMode,
         prizeTable: cleanPrizeTable
-      } : m));
-      const updatedT = tournaments.find(m => m.id === editingTourId);
-      setDoc(doc(db, 'tournaments', editingTourId), { ...updatedT, title: newTourTitle, prizePool: parseFloat(newTourPrize), entryFee: parseFloat(newTourFee) }).catch(e => console.error(e));
+      };
+      setTournaments(tournaments.map(m => m.id === editingTourId ? updatedT : m));
+      setDoc(doc(db, 'tournaments', editingTourId), updatedT).catch(e => { console.error(e); showToast('Tournament save e error hoyeche!'); });
       showToast('Tournament updated!');
     } else {
       const newT = {
