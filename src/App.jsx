@@ -129,10 +129,11 @@ export default function App() {
     { image: '', title: '', subtitle: '' },
     { image: '', title: '', subtitle: '' },
   ]);
-  const setBanners = (updater) => {
+ const setBanners = (updater) => {
     _setBanners(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      setDoc(doc(db, 'appData', 'banners'), { list: next }).catch(e => showToast('Save error: ' + e.message));
+      setDoc(doc(db, 'appData', 'banners'), { list: next })
+        .catch(e => { console.error(e); showToast('Banner save e error hoyeche!'); });
       return next;
     });
   };
