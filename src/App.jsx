@@ -338,9 +338,10 @@ export default function App() {
     });
   };
   useEffect(() => {
-    getDocs(collection(db, 'shopOrders')).then(snap => {
-      if (!snap.empty) _setPendingShopOrders(snap.docs.map(d => d.data()));
-    }).catch(e => console.error(e));
+    const unsub = onSnapshot(doc(db, 'appData', 'banners'), (snap) => {
+      if (snap.exists()) _setBanners(snap.data().list);
+    }, (e) => console.error('Banner sync error:', e));
+    return () => unsub();
   }, []);
   useEffect(() => {
     const loadPending = async () => {
