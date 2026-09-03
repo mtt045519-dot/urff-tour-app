@@ -715,7 +715,7 @@ export default function App() {
   const setShopItemsSynced = (updater) => {
     setShopItems(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      next.forEach(item => setDoc(doc(db, 'shopItems', String(item.id)), item).catch(e => console.error(e)));
+      next.forEach(item => setDoc(doc(db, 'shopItems', String(item.id)), item).catch(e => showToast('Save error: ' + e.message)));
       return next;
     });
   };
