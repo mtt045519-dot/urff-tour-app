@@ -1914,6 +1914,7 @@ if (type === 'withdrawal') deleteDoc(doc(db, 'pendingWithdrawals', item.id)).cat
       applyBalanceChange(user.uid, { winning: myTotal });
     }
     setTournaments(tournaments.map(m => m.id === matchResultsModal.id ? { ...m, status: 'completed' } : m));
+    setDoc(doc(db, 'tournaments', matchResultsModal.id), { ...matchResultsModal, status: 'completed' }).catch(e => console.error(e));
     setMatchResultsHistory(prev => ({
       ...prev,
       [matchResultsModal.id]: {
