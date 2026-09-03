@@ -533,7 +533,7 @@ export default function App() {
     const setMatchCategoriesSynced = (updater) => {
     setMatchCategories(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      setDoc(doc(db, 'appData', 'matchCategories'), { list: next }).catch(e => console.error(e));
+      setDoc(doc(db, 'appData', 'matchCategories'), { list: next }).catch(e => showToast('Save error: ' + e.message));
       return next;
     });
   };
