@@ -1494,7 +1494,8 @@ export default function App() {
   };
 
   const handleDeleteShopItem = (id) => {
-   setShopItemsSynced(shopItems.filter(i => i.id !== id));
+   setShopItems(shopItems.filter(i => i.id !== id));
+   deleteDoc(doc(db, 'shopItems', id)).catch(e => { console.error(e); showToast('Delete korte error hoyeche!'); });
     showToast('Shop item remove kora hoyeche!');
   };
 
