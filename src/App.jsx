@@ -1360,12 +1360,13 @@ export default function App() {
   };
 
   const handleToggleMatchStarted = (id) => {
-    const updated = tournaments.map(m => m.id === id ? { ...m, started: !m.started, status: !m.started ? 'live' : m.status } : m);
-    setTournaments(updated);
-    const changedT = updated.find(m => m.id === id);
-    setDoc(doc(db, 'tournaments', id), changedT).catch(e => console.error(e));
+    const mt = tournaments.find(m => m.id === id);
+    const updated = { ...mt, started: !mt.started, status: !mt.started ? 'live' : mt.status };
+    setTournaments(prev => prev.map(m => m.id === id ? updated : m));
+    updateDoc(doc(db, 'tournaments', id), { started: updated.started, status: updated.status })
+      .catch(e => { console.error(e); showToast('Status save e error hoyeche!'); });
     showToast('Match status update kora hoyeche!');
-};
+  };
 
   const handleDeleteTournament = (id) => {
     setTournaments(tournaments.filter(t => t.id !== id));
