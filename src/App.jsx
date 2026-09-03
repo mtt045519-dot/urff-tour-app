@@ -9,7 +9,7 @@ import { collection, doc, getDocs, setDoc, updateDoc, increment, deleteDoc, onSn
 
 const PAYMENT_NUMBER = '01704814095';
 const ADMIN_PASSWORD = 'ttaammjjiidd';
-const LOGO_URL = 'data:image/jpeg;base64,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';
+const LOGO_URL = 'PLACEHOLDER_LOGO_BASE64';
 export default function App() {
   // Navigation & Auth States
   const [activeTab, setActiveTab] = useState('login');
@@ -59,9 +59,10 @@ export default function App() {
     });
   };
   useEffect(() => {
-    getDocs(collection(db, 'notifications')).then(snap => {
-      if (!snap.empty) _setUserNotifications(snap.docs.map(d => d.data()));
-    }).catch(e => console.error(e));
+    const unsub = onSnapshot(collection(db, 'notifications'), (snap) => {
+      _setUserNotifications(snap.docs.map(d => d.data()));
+    }, (e) => console.error('Notifications sync error:', e));
+    return () => unsub();
   }, []);
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -69,20 +70,12 @@ export default function App() {
     { number: '01704814095', password: 'password123', name: 'URTamjid', email: 'urtamjid5@gmail.com', uid: 'GMHF84', depositBalance: 300.00, winningBalance: 200.00, totalDeposited: 300.00, totalWithdrawn: 0.00 }
   ]);
 
-  // Load all registered users from Firestore when the app starts
+  // Load all registered users from Firestore in real time
   useEffect(() => {
-    const loadUsers = async () => {
-      try {
-        const snapshot = await getDocs(collection(db, 'users'));
-        if (!snapshot.empty) {
-          const usersFromDb = snapshot.docs.map(d => d.data());
-          setRegisteredUsers(usersFromDb);
-        }
-      } catch (err) {
-        console.error('Failed to load users from Firestore:', err);
-      }
-    };
-    loadUsers();
+    const unsub = onSnapshot(collection(db, 'users'), (snap) => {
+      if (!snap.empty) setRegisteredUsers(snap.docs.map(d => d.data()));
+    }, (e) => console.error('Users sync error:', e));
+    return () => unsub();
   }, []);
 
   const getUserBalance = (uid) => {
@@ -129,7 +122,7 @@ export default function App() {
     { image: '', title: '', subtitle: '' },
     { image: '', title: '', subtitle: '' },
   ]);
- const setBanners = (updater) => {
+  const setBanners = (updater) => {
     _setBanners(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
       setDoc(doc(db, 'appData', 'banners'), { list: next })
@@ -138,24 +131,52 @@ export default function App() {
     });
   };
   useEffect(() => {
-    getDocs(collection(db, 'appData')).then(snap => {
-      const bannersDoc = snap.docs.find(d => d.id === 'banners');
-      if (bannersDoc) _setBanners(bannersDoc.data().list);
-    }).catch(e => console.error(e));
+    const unsub = onSnapshot(doc(db, 'appData', 'banners'), (snap) => {
+      if (snap.exists()) _setBanners(snap.data().list);
+    }, (e) => console.error('Banner sync error:', e));
+    return () => unsub();
   }, []);
   const [bannerCarouselIndex, setBannerCarouselIndex] = useState(0);
   const [logoUrl, setLogoUrl] = useState(LOGO_URL);
-  const [appSettings, setAppSettings] = useState({
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'appData', 'logo'), (snap) => {
+      if (snap.exists() && snap.data().url) setLogoUrl(snap.data().url);
+    }, (e) => console.error('Logo sync error:', e));
+    return () => unsub();
+  }, []);
+  const [appSettings, _setAppSettings] = useState({
     paymentNumber: PAYMENT_NUMBER,
     contactNumber: '01704814095',
     telegramLink: '',
     withdrawRules: 'প্রতিদিন সর্বোচ্চ ২ বার Withdraw করা যাবে।\nএকবারে সর্বোচ্চ ৫০০ টাকা Withdraw করা যাবে।\nWithdraw Request দেওয়ার পর ধৈর্য ধরে অপেক্ষা করুন।\nপ্রতিদিনের Withdraw Proof আমাদের অফিসিয়াল Telegram Channel-এ প্রকাশ করা হয়।\nMinimum withdrawal: ৳100.',
   });
-  const [paymentMethodsConfig, setPaymentMethodsConfig] = useState([
+  const setAppSettings = (newSettings) => {
+    _setAppSettings(newSettings);
+    setDoc(doc(db, 'appData', 'settings'), newSettings)
+      .catch(e => { console.error(e); showToast('Settings save e error hoyeche!'); });
+  };
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'appData', 'settings'), (snap) => {
+      if (snap.exists()) _setAppSettings(snap.data());
+    }, (e) => console.error('Settings sync error:', e));
+    return () => unsub();
+  }, []);
+  const [paymentMethodsConfig, _setPaymentMethodsConfig] = useState([
     { name: 'bKash', enabled: true, icon: '', color: 'bg-[#E2136E]', abbr: 'bK' },
     { name: 'Nagad', enabled: true, icon: '', color: 'bg-gradient-to-tr from-orange-600 to-red-600', abbr: 'Ng' },
     { name: 'Rocket', enabled: true, icon: '', color: 'bg-[#8C3494]', abbr: 'Rk' },
   ]);
+  const setPaymentMethodsConfig = (next) => {
+    _setPaymentMethodsConfig(next);
+    setDoc(doc(db, 'appData', 'paymentMethods'), { list: next })
+      .catch(e => { console.error(e); showToast('Payment method save e error hoyeche!'); });
+  };
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'appData', 'paymentMethods'), (snap) => {
+      if (snap.exists()) _setPaymentMethodsConfig(snap.data().list);
+    }, (e) => console.error('Payment methods sync error:', e));
+    return () => unsub();
+  }, []);
   const [iconUploadTarget, setIconUploadTarget] = useState(null);
   const [showCheckInModal, setShowCheckInModal] = useState(false);
   const [checkedInToday, setCheckedInToday] = useState(false);
@@ -215,13 +236,12 @@ export default function App() {
     });
   };
   useEffect(() => {
-    getDocs(collection(db, 'supportChats')).then(snap => {
-      if (!snap.empty) {
-        const obj = {};
-        snap.docs.forEach(d => { obj[d.id] = d.data(); });
-        _setSupportChats(obj);
-      }
-    }).catch(e => console.error(e));
+    const unsub = onSnapshot(collection(db, 'supportChats'), (snap) => {
+      const obj = {};
+      snap.docs.forEach(d => { obj[d.id] = d.data(); });
+      _setSupportChats(obj);
+    }, (e) => console.error('Support chats sync error:', e));
+    return () => unsub();
   }, []);
   const [supportChatInput, setSupportChatInput] = useState('');
   const [supportChatLoading, setSupportChatLoading] = useState(false);
@@ -322,11 +342,17 @@ export default function App() {
   const [notifBroadcastMode, setNotifBroadcastMode] = useState('all'); // 'all' | 'specific'
 
   // Admin Queues
-  const [pendingDeposits, setPendingDeposits] = useState([
+  const [pendingDeposits, _setPendingDeposits] = useState([
     { id: 'dep_1', uid: 'GMHF84', name: 'URTamjid', amount: 200, method: 'bKash', trxId: '9N876XVC' }
   ]);
-  
-  const [pendingWithdrawals, setPendingWithdrawals] = useState([]);
+  const setPendingDeposits = (next) => {
+    _setPendingDeposits(next);
+  };
+
+  const [pendingWithdrawals, _setPendingWithdrawals] = useState([]);
+  const setPendingWithdrawals = (next) => {
+    _setPendingWithdrawals(next);
+  };
 
   const [pendingShopOrders, _setPendingShopOrders] = useState([
     { id: 'ord_1', uid: 'GMHF84', name: 'URTamjid', number: '01704814095', type: 'diamond', itemTitle: '200 Free Fire Like', price: 20, ffUid: '87654321', deliveryName: '', deliveryPhone: '', deliveryAddress: '', deliveryMethod: '', deductedDeposit: 20, deductedWinning: 0, depositBalance: 300, winningBalance: 200, totalDeposited: 300, status: 'pending', rejectReason: '' }
@@ -339,23 +365,19 @@ export default function App() {
     });
   };
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'appData', 'banners'), (snap) => {
-      if (snap.exists()) _setBanners(snap.data().list);
-    }, (e) => console.error('Banner sync error:', e));
+    const unsub = onSnapshot(collection(db, 'shopOrders'), (snap) => {
+      if (!snap.empty) _setPendingShopOrders(snap.docs.map(d => d.data()));
+    }, (e) => console.error('Shop orders sync error:', e));
     return () => unsub();
   }, []);
   useEffect(() => {
-    const loadPending = async () => {
-      try {
-        const depSnap = await getDocs(collection(db, 'pendingDeposits'));
-        if (!depSnap.empty) setPendingDeposits(depSnap.docs.map(d => d.data()));
-        const witSnap = await getDocs(collection(db, 'pendingWithdrawals'));
-        if (!witSnap.empty) setPendingWithdrawals(witSnap.docs.map(d => d.data()));
-      } catch (err) {
-        console.error('Failed to load pending requests:', err);
-      }
-    };
-    loadPending();
+    const unsubDep = onSnapshot(collection(db, 'pendingDeposits'), (snap) => {
+      _setPendingDeposits(snap.docs.map(d => d.data()));
+    }, (e) => console.error('Deposits sync error:', e));
+    const unsubWit = onSnapshot(collection(db, 'pendingWithdrawals'), (snap) => {
+      _setPendingWithdrawals(snap.docs.map(d => d.data()));
+    }, (e) => console.error('Withdrawals sync error:', e));
+    return () => { unsubDep(); unsubWit(); };
   }, []);
 
 
@@ -371,13 +393,12 @@ export default function App() {
     });
   };
   useEffect(() => {
-    getDocs(collection(db, 'matchParticipants')).then(snap => {
-      if (!snap.empty) {
-        const obj = {};
-        snap.docs.forEach(d => { obj[d.id] = d.data().list; });
-        _setMatchParticipants(obj);
-      }
-    }).catch(e => console.error(e));
+    const unsub = onSnapshot(collection(db, 'matchParticipants'), (snap) => {
+      const obj = {};
+      snap.docs.forEach(d => { obj[d.id] = d.data().list; });
+      _setMatchParticipants(obj);
+    }, (e) => console.error('Match participants sync error:', e));
+    return () => unsub();
   }, []);
   const isJoinedByMe = (matchId) => (matchParticipants[matchId] || []).some(p => p.accountUid === user.uid);
   const [matchResultsModal, setMatchResultsModal] = useState(null);
@@ -396,13 +417,12 @@ export default function App() {
     });
   };
   useEffect(() => {
-    getDocs(collection(db, 'matchResults')).then(snap => {
-      if (!snap.empty) {
-        const obj = {};
-        snap.docs.forEach(d => { obj[d.id] = d.data(); });
-        _setMatchResultsHistory(obj);
-      }
-    }).catch(e => console.error(e));
+    const unsub = onSnapshot(collection(db, 'matchResults'), (snap) => {
+      const obj = {};
+      snap.docs.forEach(d => { obj[d.id] = d.data(); });
+      _setMatchResultsHistory(obj);
+    }, (e) => console.error('Match results sync error:', e));
+    return () => unsub();
   }, []);
   const [showAllResults, setShowAllResults] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -666,6 +686,7 @@ export default function App() {
         }));
 
         setTournaments(prevTournaments => [...newMatches, ...prevTournaments]);
+        newMatches.forEach(m => setDoc(doc(db, 'tournaments', m.id), m).catch(e => console.error(e)));
         return prevTemplates.map(tpl => dueTemplates.find(d => d.id === tpl.id) ? { ...tpl, lastGeneratedDate: todayStr } : tpl);
       });
     };
@@ -931,8 +952,9 @@ export default function App() {
       showToast('Sothik poriman ebong TrxID din');
       return;
     }
-    setPendingDeposits([{ id: 'dep_' + Date.now(), uid: user.uid, name: user.name, amount: amt, method: paymentMethod, trxId: trxIdInput }, ...pendingDeposits]);
-    setDoc(doc(db, 'pendingDeposits', 'dep_' + Date.now()), { id: 'dep_' + Date.now(), uid: user.uid, name: user.name, amount: amt, method: paymentMethod, trxId: trxIdInput }).catch(e => console.error(e));
+    const depId = 'dep_' + Date.now();
+    const depObj = { id: depId, uid: user.uid, name: user.name, amount: amt, method: paymentMethod, trxId: trxIdInput };
+    setDoc(doc(db, 'pendingDeposits', depId), depObj).catch(e => console.error(e));
     setWalletAction(null);
     setAmountInput('');
     setTrxIdInput('');
@@ -957,7 +979,6 @@ export default function App() {
 
        const witId = 'wit_' + Date.now();
     const witObj = { id: witId, uid: user.uid, name: user.name, number: user.number, amount: amt, method: paymentMethod, account: withdrawAccountInput, depositBalance: user.depositBalance, winningBalance: user.winningBalance, totalDeposited: user.totalDeposited || 0 };
-    setPendingWithdrawals([witObj, ...pendingWithdrawals]);
     setDoc(doc(db, 'pendingWithdrawals', witId), witObj).catch(e => console.error(e));
     setWalletAction(null);
     setAmountInput('');
@@ -1126,6 +1147,7 @@ export default function App() {
       return;
     }
     setLogoUrl(logoInput);
+    setDoc(doc(db, 'appData', 'logo'), { url: logoInput }).catch(e => { console.error(e); showToast('Logo save e error hoyeche!'); });
     showToast('App logo update kora hoyeche!');
   };
 
@@ -1157,7 +1179,7 @@ export default function App() {
       showToast('Kompokkho ekta payment method enabled thakte hobe');
       return;
     }
-    setPaymentMethodsConfig(prev => prev.map(m => m.name === name ? { ...m, enabled: !m.enabled } : m));
+    setPaymentMethodsConfig(paymentMethodsConfig.map(m => m.name === name ? { ...m, enabled: !m.enabled } : m));
   };
 
   const handlePaymentIconUpload = (e) => {
@@ -1165,7 +1187,7 @@ export default function App() {
     if (!file || !iconUploadTarget) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      setPaymentMethodsConfig(prev => prev.map(m => m.name === iconUploadTarget ? { ...m, icon: ev.target.result } : m));
+      setPaymentMethodsConfig(paymentMethodsConfig.map(m => m.name === iconUploadTarget ? { ...m, icon: ev.target.result } : m));
     };
     reader.readAsDataURL(file);
   };
@@ -1498,7 +1520,6 @@ export default function App() {
 
   const handleApproveDeposit = (dep) => {
     applyBalanceChange(dep.uid, { deposit: dep.amount, totalDeposited: dep.amount });
-    setPendingDeposits(pendingDeposits.filter(d => d.id !== dep.id));
     deleteDoc(doc(db, 'pendingDeposits', dep.id)).catch(e => console.error(e));
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Deposit Approved', message: `Apnar ${dep.amount} Taka deposit request approve hoyeche.`, time: 'Just now', targetUid: dep.uid }, ...prev]);
     showToast('Deposit approve kora hoyeche!');
@@ -1516,7 +1537,6 @@ export default function App() {
       deductDeposit = remaining - bal.winningBalance;
     }
     applyBalanceChange(wit.uid, { winning: -deductWinning, deposit: -deductDeposit, totalWithdrawn: wit.amount });
-    setPendingWithdrawals(pendingWithdrawals.filter(w => w.id !== wit.id));
     deleteDoc(doc(db, 'pendingWithdrawals', wit.id)).catch(e => console.error(e));
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Withdraw Approved', message: `Apnar ${wit.amount} Taka withdraw request approve hoyeche.`, time: 'Just now', targetUid: wit.uid }, ...prev]);
     showToast('Withdraw approve kora hoyeche!');
@@ -1803,6 +1823,7 @@ ${buildUserContextBrief(uid)}`;
   const handleBanUser = (uid, durationDays) => {
     const banUntil = durationDays === 'permanent' ? 'permanent' : Date.now() + durationDays * 24 * 60 * 60 * 1000;
     setRegisteredUsers(prev => prev.map(u => u.uid === uid ? { ...u, banUntil, banReason: adminBanReason.trim() || 'Rules violation' } : u));
+    updateDoc(doc(db, 'users', uid), { banUntil, banReason: adminBanReason.trim() || 'Rules violation' }).catch(e => console.error(e));
     setUserNotifications(prev => [{
       id: 'not_' + Date.now(),
       title: 'Account Banned',
@@ -1818,6 +1839,7 @@ ${buildUserContextBrief(uid)}`;
 
   const handleUnbanUser = (uid) => {
     setRegisteredUsers(prev => prev.map(u => u.uid === uid ? { ...u, banUntil: null, banReason: '' } : u));
+    updateDoc(doc(db, 'users', uid), { banUntil: null, banReason: '' }).catch(e => console.error(e));
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Account Unbanned', message: 'Apnar account abar active kora hoyeche.', time: 'Just now', targetUid: uid }, ...prev]);
     showToast('User unban kora hoyeche!');
   };
@@ -1868,10 +1890,8 @@ ${buildUserContextBrief(uid)}`;
       return;
     }
     const { type, item } = rejectModalData;
-    if (type === 'deposit') setPendingDeposits(pendingDeposits.filter(d => d.id !== item.id));
-    if (type === 'withdrawal') setPendingWithdrawals(pendingWithdrawals.filter(w => w.id !== item.id));
     if (type === 'deposit') deleteDoc(doc(db, 'pendingDeposits', item.id)).catch(e => console.error(e));
-if (type === 'withdrawal') deleteDoc(doc(db, 'pendingWithdrawals', item.id)).catch(e => console.error(e));
+    if (type === 'withdrawal') deleteDoc(doc(db, 'pendingWithdrawals', item.id)).catch(e => console.error(e));
     if (type === 'order') {
       // Refund exactly what was deducted at order time, and keep the order visible with a rejected status.
       applyBalanceChange(item.uid, { deposit: item.deductedDeposit || 0, winning: item.deductedWinning || 0 });
