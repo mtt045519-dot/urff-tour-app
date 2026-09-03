@@ -722,10 +722,11 @@ export default function App() {
       return next;
     });
   };
-  useEffect(() => {
-    getDocs(collection(db, 'shopItems')).then(snap => {
-      if (!snap.empty) setShopItems(snap.docs.map(d => d.data()));
-    }).catch(e => console.error(e));
+ useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'shopItems'), (snap) => {
+      setShopItems(snap.docs.map(d => d.data()));
+    }, (e) => console.error('Shop sync error:', e));
+    return () => unsub();
   }, []);
 
   const handleRegister = () => {
