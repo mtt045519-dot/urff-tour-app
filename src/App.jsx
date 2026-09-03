@@ -132,7 +132,7 @@ export default function App() {
   const setBanners = (updater) => {
     _setBanners(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      setDoc(doc(db, 'appData', 'banners'), { list: next }).catch(e => console.error(e));
+      setDoc(doc(db, 'appData', 'banners'), { list: next }).catch(e => showToast('Save error: ' + e.message));
       return next;
     });
   };
