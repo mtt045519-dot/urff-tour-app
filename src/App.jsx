@@ -1093,12 +1093,10 @@ export default function App() {
     });
   };
 
-  const handleBannerImageUpload = (e) => {
+   const handleBannerImageUpload = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => setBannerImageInput(ev.target.result);
-    reader.readAsDataURL(file);
+    compressImage(file).then(setBannerImageInput);
   };
 
   const loadBannerFormFromSlot = (slotIdx) => {
