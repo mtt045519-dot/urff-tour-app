@@ -1069,12 +1069,10 @@ export default function App() {
       reader.readAsDataURL(file);
     });
   };
-  const handleTourImageUpload = (e) => {
+   const handleTourImageUpload = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => setNewTourImage(ev.target.result);
-    reader.readAsDataURL(file);
+    compressImage(file).then(setNewTourImage);
   };
 
   const handleShopImageUpload = (e) => {
