@@ -1081,18 +1081,16 @@ export default function App() {
     compressImage(file).then(setNewShopImage);
   };
 
-  const handleShopExtraImageUpload = (slotIdx, e) => {
+   const handleShopExtraImageUpload = (slotIdx, e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
+    compressImage(file).then(result => {
       setNewShopExtraImages(prev => {
         const arr = [...prev];
-        arr[slotIdx] = ev.target.result;
+        arr[slotIdx] = result;
         return arr;
       });
-    };
-    reader.readAsDataURL(file);
+    });
   };
 
   const handleBannerImageUpload = (e) => {
