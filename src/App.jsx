@@ -1242,12 +1242,10 @@ export default function App() {
     ]);
   };
 
-  const handleCategoryImageUpload = (e) => {
+    const handleCategoryImageUpload = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => setNewCategoryImage(ev.target.result);
-    reader.readAsDataURL(file);
+    compressImage(file).then(setNewCategoryImage);
   };
 
   const resetCategoryForm = () => {
