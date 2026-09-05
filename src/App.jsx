@@ -1513,18 +1513,8 @@ export default function App() {
     showToast('Deposit approve kora hoyeche!');
   };
 
-  const handleApproveWithdrawal = (wit) => {
-    const bal = getUserBalance(wit.uid);
-    let remaining = wit.amount;
-    let deductWinning = 0;
-    let deductDeposit = 0;
-    if (bal.winningBalance >= remaining) {
-      deductWinning = remaining;
-    } else {
-      deductWinning = bal.winningBalance;
-      deductDeposit = remaining - bal.winningBalance;
-    }
-    applyBalanceChange(wit.uid, { winning: -deductWinning, deposit: -deductDeposit, totalWithdrawn: wit.amount });
+    const handleApproveWithdrawal = (wit) => {
+    applyBalanceChange(wit.uid, { totalWithdrawn: wit.amount });
     setPendingWithdrawals(pendingWithdrawals.filter(w => w.id !== wit.id));
     deleteDoc(doc(db, 'pendingWithdrawals', wit.id)).catch(e => console.error(e));
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Withdraw Approved', message: `Apnar ${wit.amount} Taka withdraw request approve hoyeche.`, time: 'Just now', targetUid: wit.uid }, ...prev]);
