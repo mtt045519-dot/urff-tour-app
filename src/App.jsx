@@ -622,16 +622,11 @@ export default function App() {
     }
   ]);
   
-  useEffect(() => {
-    const loadTournaments = async () => {
-      try {
-        const snap = await getDocs(collection(db, 'tournaments'));
-        if (!snap.empty) setTournaments(snap.docs.map(d => d.data()));
-      } catch (err) {
-        console.error('Failed to load tournaments:', err);
-      }
-    };
-    loadTournaments();
+   useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'tournaments'), (snap) => {
+      if (!snap.empty) setTournaments(snap.docs.map(d => d.data()));
+    }, (err) => console.error('Tournament sync error:', err));
+    return () => unsub();
   }, []);
  
   // Auto-generate today's matches from any "Command to Automated" templates. Runs on load
