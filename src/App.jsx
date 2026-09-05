@@ -177,11 +177,24 @@ export default function App() {
     }, (err) => console.error('Settings sync error:', err));
     return () => unsub();
   }, []);
-  const [paymentMethodsConfig, setPaymentMethodsConfig] = useState([
-    { name: 'bKash', enabled: true, icon: '', color: 'bg-[#E2136E]', abbr: 'bK' },
-    { name: 'Nagad', enabled: true, icon: '', color: 'bg-gradient-to-tr from-orange-600 to-red-600', abbr: 'Ng' },
-    { name: 'Rocket', enabled: true, icon: '', color: 'bg-[#8C3494]', abbr: 'Rk' },
+    const [paymentMethodsConfig, _setPaymentMethodsConfig] = useState([
+    { name: 'bKash', enabled: true, icon: '', color: 'bg-[#E2136E]', abbr: 'bK', number: '01704814095' },
+    { name: 'Nagad', enabled: true, icon: '', color: 'bg-gradient-to-tr from-orange-600 to-red-600', abbr: 'Ng', number: '01704814095' },
+    { name: 'Rocket', enabled: true, icon: '', color: 'bg-[#8C3494]', abbr: 'Rk', number: '01704814095' },
   ]);
+  const setPaymentMethodsConfig = (updater) => {
+    _setPaymentMethodsConfig(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      setDoc(doc(db, 'appData', 'paymentMethods'), { list: next }).catch(e => console.error(e));
+      return next;
+    });
+  };
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'appData', 'paymentMethods'), (docSnap) => {
+      if (docSnap.exists()) _setPaymentMethodsConfig(docSnap.data().list);
+    }, (err) => console.error('Payment methods sync error:', err));
+    return () => unsub();
+  }, []);
   const [iconUploadTarget, setIconUploadTarget] = useState(null);
   const [showCheckInModal, setShowCheckInModal] = useState(false);
   const [checkedInToday, setCheckedInToday] = useState(false);
