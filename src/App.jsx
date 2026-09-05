@@ -1246,12 +1246,10 @@ export default function App() {
     setShowProfileSettings(true);
   };
 
-  const handleProfileAvatarUpload = (e) => {
+    const handleProfileAvatarUpload = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => setProfileAvatarInput(ev.target.result);
-    reader.readAsDataURL(file);
+    compressImage(file, 300, 0.6).then(setProfileAvatarInput);
   };
 
   const handleSaveProfile = () => {
