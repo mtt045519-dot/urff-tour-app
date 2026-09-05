@@ -1182,12 +1182,10 @@ export default function App() {
     showToast(`Banner ${editingBannerSlot + 1} clear kora hoyeche!`);
   };
 
-  const handleLogoImageUpload = (e) => {
+    const handleLogoImageUpload = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => setLogoInput(ev.target.result);
-    reader.readAsDataURL(file);
+    compressImage(file, 300, 0.6).then(setLogoInput);
   };
 
   const handleSaveLogo = () => {
@@ -1196,6 +1194,7 @@ export default function App() {
       return;
     }
     setLogoUrl(logoInput);
+    setDoc(doc(db, 'appData', 'logo'), { url: logoInput }).catch(e => console.error(e));
     showToast('App logo update kora hoyeche!');
   };
 
