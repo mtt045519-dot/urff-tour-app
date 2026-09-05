@@ -1180,7 +1180,7 @@ export default function App() {
       showToast('Payment number ebong contact number din');
       return;
     }
-    setAppSettings({
+    setAppSettingsSynced({
       paymentNumber: paymentNumberInput.trim(),
       contactNumber: contactNumberInput.trim(),
       telegramLink: telegramLinkInput.trim(),
