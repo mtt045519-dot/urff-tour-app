@@ -12,6 +12,19 @@ const LOGO_URL = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBAU
 export default function App() {
   // Navigation & Auth States
   const [activeTab, setActiveTab] = useState('login');
+  
+  useEffect(() => {
+    const savedSession = localStorage.getItem('urff_session');
+    if (savedSession) {
+      try {
+        const parsed = JSON.parse(savedSession);
+        setUser(parsed);
+        setActiveTab('home');
+      } catch (e) {
+        localStorage.removeItem('urff_session');
+      }
+    }
+  }, []);
   const tourFileInputRef = useRef(null);
   const categoryFileInputRef = useRef(null);
   const shopFileInputRef = useRef(null);
