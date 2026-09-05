@@ -786,7 +786,7 @@ export default function App() {
 
     setRegisteredUsers([...registeredUsers, newUserObj]);
     setDoc(doc(db, 'users', newUserObj.uid), newUserObj).catch(err => console.error('Failed to save user:', err));
-    setUser({
+        const newLoggedInUser = {
       name: regUsername,
       number: regNumber,
       email: regGmail,
@@ -796,7 +796,9 @@ export default function App() {
       winningBalance: 5.00,
       totalDeposited: 0.00,
       totalWithdrawn: 0.00
-    });
+    };
+    setUser(newLoggedInUser);
+    localStorage.setItem('urff_session', JSON.stringify(newLoggedInUser));
 
     const refCode = regReferralCode.trim();
     if (refCode && refCode !== newUserObj.uid) {
