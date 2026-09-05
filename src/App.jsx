@@ -1948,6 +1948,17 @@ ${buildUserContextBrief(uid)}`;
     if (!createdAt || isNaN(createdAt)) return true;
     return (Date.now() - createdAt) < NOTIFICATION_MAX_AGE_MS;
   });
+  
+  const handleDeleteNotification = (id) => {
+    setUserNotifications(prev => prev.filter(n => n.id !== id));
+    deleteDoc(doc(db, 'notifications', String(id))).catch(e => console.error(e));
+  };
+
+  const handleClearAllNotifications = () => {
+    const remaining = userNotifications.filter(n => !myNotifications.some(m => m.id === n.id));
+    myNotifications.forEach(n => deleteDoc(doc(db, 'notifications', String(n.id))).catch(e => console.error(e)));
+    setUserNotifications(remaining);
+  };
 
   const t = darkMode
     ? { bg: 'bg-slate-950', card: 'bg-slate-900', border: 'border-slate-800', text: 'text-slate-100', sub: 'text-slate-400', input: 'bg-slate-950 border-slate-800' }
