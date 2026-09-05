@@ -153,6 +153,17 @@ export default function App() {
     telegramLink: '',
     withdrawRules: 'প্রতিদিন সর্বোচ্চ ২ বার Withdraw করা যাবে।\nএকবারে সর্বোচ্চ ৫০০ টাকা Withdraw করা যাবে।\nWithdraw Request দেওয়ার পর ধৈর্য ধরে অপেক্ষা করুন।\nপ্রতিদিনের Withdraw Proof আমাদের অফিসিয়াল Telegram Channel-এ প্রকাশ করা হয়।\nMinimum withdrawal: ৳100.',
   });
+  
+  const setAppSettingsSynced = (newSettings) => {
+    setAppSettings(newSettings);
+    setDoc(doc(db, 'appData', 'settings'), newSettings).catch(e => console.error(e));
+  };
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'appData', 'settings'), (docSnap) => {
+      if (docSnap.exists()) setAppSettings(docSnap.data());
+    }, (err) => console.error('Settings sync error:', err));
+    return () => unsub();
+  }, []);
   const [paymentMethodsConfig, setPaymentMethodsConfig] = useState([
     { name: 'bKash', enabled: true, icon: '', color: 'bg-[#E2136E]', abbr: 'bK' },
     { name: 'Nagad', enabled: true, icon: '', color: 'bg-gradient-to-tr from-orange-600 to-red-600', abbr: 'Ng' },
