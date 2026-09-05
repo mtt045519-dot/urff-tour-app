@@ -4452,10 +4452,10 @@ ${buildUserContextBrief(uid)}`;
                 {renderPaymentMethodSelector()}
               </div>
 
-              <button onClick={() => copyToClipboard(appSettings.paymentNumber, 'Number')} className={`w-full text-left ${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-1`}>
+                            <button onClick={() => copyToClipboard((paymentMethodsConfig.find(m => m.name === paymentMethod) || {}).number || appSettings.paymentNumber, 'Number')} className={`w-full text-left ${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-1`}>
                 <p className="text-[10px] text-slate-500">Send Money To This {paymentMethod} Number (Personal) — tap to copy</p>
                 <div className="flex items-center justify-between">
-                  <p className="font-mono font-bold text-sm text-indigo-400">{appSettings.paymentNumber}</p>
+                  <p className="font-mono font-bold text-sm text-indigo-400">{(paymentMethodsConfig.find(m => m.name === paymentMethod) || {}).number || appSettings.paymentNumber}</p>
                   <Copy className="w-4 h-4 text-slate-400" />
                 </div>
               </button>
