@@ -823,7 +823,7 @@ export default function App() {
         showToast(`Apnar account ${untilText} ban kora hoyeche.${found.banReason ? ' Karon: ' + found.banReason : ''}`);
         return;
       }
-      setUser({
+            const loggedInUser = {
         name: found.name,
         number: found.number,
         email: found.email,
@@ -833,7 +833,9 @@ export default function App() {
         winningBalance: found.winningBalance || 0,
         totalDeposited: found.totalDeposited || 0,
         totalWithdrawn: found.totalWithdrawn || 0
-      });
+      };
+      setUser(loggedInUser);
+      localStorage.setItem('urff_session', JSON.stringify(loggedInUser));
       showToast('Login successful!');
       setActiveTab('home');
     } else {
