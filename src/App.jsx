@@ -389,14 +389,13 @@ export default function App() {
       return next;
     });
   };
-  useEffect(() => {
-    getDocs(collection(db, 'matchResults')).then(snap => {
-      if (!snap.empty) {
-        const obj = {};
-        snap.docs.forEach(d => { obj[d.id] = d.data(); });
-        _setMatchResultsHistory(obj);
-      }
-    }).catch(e => console.error(e));
+   useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'matchResults'), (snap) => {
+      const obj = {};
+      snap.docs.forEach(d => { obj[d.id] = d.data(); });
+      _setMatchResultsHistory(obj);
+    }, (err) => console.error('Results sync error:', err));
+    return () => unsub();
   }, []);
   const [showAllResults, setShowAllResults] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
