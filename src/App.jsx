@@ -845,7 +845,8 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+   const handleLogout = () => {
+    localStorage.removeItem('urff_session');
     setIsAdminAuthenticated(false);
     setLoginNumber('');
     setLoginPassword('');
