@@ -70,20 +70,23 @@ export default function App() {
   ]);
 
   // Load all registered users from Firestore when the app starts
-  useEffect(() => {
-    const loadUsers = async () => {
-      try {
-        const snapshot = await getDocs(collection(db, 'users'));
-        if (!snapshot.empty) {
-          const usersFromDb = snapshot.docs.map(d => d.data());
-          setRegisteredUsers(usersFromDb);
-        }
-      } catch (err) {
-        console.error('Failed to load users from Firestore:', err);
+    useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const usersFromDb = snapshot.docs.map(d => d.data());
+      setRegisteredUsers(usersFromDb);
+      const myDoc = usersFromDb.find(u => u.uid === user.uid);
+      if (myDoc) {
+        setUser(prev => ({
+          ...prev,
+          depositBalance: myDoc.depositBalance ?? prev.depositBalance,
+          winningBalance: myDoc.winningBalance ?? prev.winningBalance,
+          totalDeposited: myDoc.totalDeposited ?? prev.totalDeposited,
+          totalWithdrawn: myDoc.totalWithdrawn ?? prev.totalWithdrawn,
+        }));
       }
-    };
-    loadUsers();
-  }, []);
+    }, (err) => console.error('User sync error:', err));
+    return () => unsub();
+  }, [user.uid]);
 
   const getUserBalance = (uid) => {
     if (uid === user.uid) return { depositBalance: user.depositBalance, winningBalance: user.winningBalance, totalDeposited: user.totalDeposited || 0 };
