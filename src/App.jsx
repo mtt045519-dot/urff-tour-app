@@ -135,11 +135,11 @@ export default function App() {
       return next;
     });
   };
-  useEffect(() => {
-    getDocs(collection(db, 'appData')).then(snap => {
-      const bannersDoc = snap.docs.find(d => d.id === 'banners');
-      if (bannersDoc) _setBanners(bannersDoc.data().list);
-    }).catch(e => console.error(e));
+   useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'appData', 'banners'), (docSnap) => {
+      if (docSnap.exists()) _setBanners(docSnap.data().list);
+    }, (err) => console.error('Banner sync error:', err));
+    return () => unsub();
   }, []);
   const [bannerCarouselIndex, setBannerCarouselIndex] = useState(0);
   const [logoUrl, setLogoUrl] = useState(LOGO_URL);
