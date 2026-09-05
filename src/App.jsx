@@ -57,10 +57,11 @@ export default function App() {
       return next;
     });
   };
-  useEffect(() => {
-    getDocs(collection(db, 'notifications')).then(snap => {
+    useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'notifications'), (snap) => {
       if (!snap.empty) _setUserNotifications(snap.docs.map(d => d.data()));
-    }).catch(e => console.error(e));
+    }, (err) => console.error('Notification sync error:', err));
+    return () => unsub();
   }, []);
   const [showNotifications, setShowNotifications] = useState(false);
 
