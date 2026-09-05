@@ -337,10 +337,11 @@ export default function App() {
       return next;
     });
   };
-  useEffect(() => {
-    getDocs(collection(db, 'shopOrders')).then(snap => {
+   useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'shopOrders'), (snap) => {
       if (!snap.empty) _setPendingShopOrders(snap.docs.map(d => d.data()));
-    }).catch(e => console.error(e));
+    }, (err) => console.error('Order sync error:', err));
+    return () => unsub();
   }, []);
     useEffect(() => {
     const unsub1 = onSnapshot(collection(db, 'pendingDeposits'), (snap) => {
