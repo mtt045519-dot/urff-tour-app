@@ -946,8 +946,18 @@ export default function App() {
       return;
     }
 
-       const witId = 'wit_' + Date.now();
-    const witObj = { id: witId, uid: user.uid, name: user.name, number: user.number, amount: amt, method: paymentMethod, account: withdrawAccountInput, depositBalance: user.depositBalance, winningBalance: user.winningBalance, totalDeposited: user.totalDeposited || 0 };
+              let wDeductDeposit = 0;
+    let wDeductWinning = 0;
+    if (user.depositBalance >= amt) {
+      wDeductDeposit = amt;
+    } else {
+      wDeductDeposit = user.depositBalance;
+      wDeductWinning = amt - user.depositBalance;
+    }
+    applyBalanceChange(user.uid, { deposit: -wDeductDeposit, winning: -wDeductWinning });
+
+    const witId = 'wit_' + Date.now();
+    const witObj = { id: witId, uid: user.uid, name: user.name, number: user.number, amount: amt, method: paymentMethod, account: withdrawAccountInput, depositBalance: user.depositBalance, winningBalance: user.winningBalance, totalDeposited: user.totalDeposited || 0, deductedDeposit: wDeductDeposit, deductedWinning: wDeductWinning };
     setPendingWithdrawals([witObj, ...pendingWithdrawals]);
     setDoc(doc(db, 'pendingWithdrawals', witId), witObj).catch(e => console.error(e));
     setWalletAction(null);
