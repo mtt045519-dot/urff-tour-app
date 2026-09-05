@@ -536,11 +536,11 @@ export default function App() {
       return next;
     });
   };
-  useEffect(() => {
-    getDocs(collection(db, 'appData')).then(snap => {
-      const catDoc = snap.docs.find(d => d.id === 'matchCategories');
-      if (catDoc) setMatchCategories(catDoc.data().list);
-    }).catch(e => console.error(e));
+    useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'appData', 'matchCategories'), (docSnap) => {
+      if (docSnap.exists()) setMatchCategories(docSnap.data().list);
+    }, (err) => console.error('Category sync error:', err));
+    return () => unsub();
   }, []);
   const [automatedTemplates, setAutomatedTemplates] = useState([]);
 
