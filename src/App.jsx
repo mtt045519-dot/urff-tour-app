@@ -4314,13 +4314,19 @@ ${buildUserContextBrief(uid)}`;
               <button onClick={() => setShowNotifications(false)}><X className="w-5 h-5 text-slate-400" /></button>
             </div>
             <div className="px-5 pb-5 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' }}>
-              {myNotifications.length === 0 ? (
+                            {myNotifications.length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-6">Kono notification nei.</p>
               ) : (
                 <div className="space-y-2">
+                  <button onClick={handleClearAllNotifications} className="w-full py-2 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-xs font-bold">
+                    Shob Notification Delete Korun
+                  </button>
                   {myNotifications.map(n => (
-                    <div key={n.id} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-0.5`}>
-                      <p className="text-xs font-bold">{n.title}</p>
+                    <div key={n.id} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-0.5 relative`}>
+                      <button onClick={() => handleDeleteNotification(n.id)} className="absolute top-2 right-2 text-slate-500">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                      <p className="text-xs font-bold pr-5">{n.title}</p>
                       <p className="text-[11px] text-slate-400">{n.message}</p>
                       <p className="text-[10px] text-slate-600">{n.time}</p>
                     </div>
