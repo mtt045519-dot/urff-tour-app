@@ -365,14 +365,13 @@ export default function App() {
       return next;
     });
   };
-  useEffect(() => {
-    getDocs(collection(db, 'matchParticipants')).then(snap => {
-      if (!snap.empty) {
-        const obj = {};
-        snap.docs.forEach(d => { obj[d.id] = d.data().list; });
-        _setMatchParticipants(obj);
-      }
-    }).catch(e => console.error(e));
+   useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'matchParticipants'), (snap) => {
+      const obj = {};
+      snap.docs.forEach(d => { obj[d.id] = d.data().list; });
+      _setMatchParticipants(obj);
+    }, (err) => console.error('Participants sync error:', err));
+    return () => unsub();
   }, []);
   const isJoinedByMe = (matchId) => (matchParticipants[matchId] || []).some(p => p.accountUid === user.uid);
   const [matchResultsModal, setMatchResultsModal] = useState(null);
