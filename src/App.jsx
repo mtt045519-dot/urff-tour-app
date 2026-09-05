@@ -1230,14 +1230,12 @@ export default function App() {
     setPaymentMethodsConfig(prev => prev.map(m => m.name === name ? { ...m, enabled: !m.enabled } : m));
   };
 
-  const handlePaymentIconUpload = (e) => {
+    const handlePaymentIconUpload = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file || !iconUploadTarget) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setPaymentMethodsConfig(prev => prev.map(m => m.name === iconUploadTarget ? { ...m, icon: ev.target.result } : m));
-    };
-    reader.readAsDataURL(file);
+    compressImage(file, 150, 0.6).then(result => {
+      setPaymentMethodsConfig(prev => prev.map(m => m.name === iconUploadTarget ? { ...m, icon: result } : m));
+    });
   };
 
   const openProfileSettings = () => {
