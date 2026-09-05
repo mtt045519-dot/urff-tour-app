@@ -341,18 +341,14 @@ export default function App() {
       if (!snap.empty) _setPendingShopOrders(snap.docs.map(d => d.data()));
     }).catch(e => console.error(e));
   }, []);
-  useEffect(() => {
-    const loadPending = async () => {
-      try {
-        const depSnap = await getDocs(collection(db, 'pendingDeposits'));
-        if (!depSnap.empty) setPendingDeposits(depSnap.docs.map(d => d.data()));
-        const witSnap = await getDocs(collection(db, 'pendingWithdrawals'));
-        if (!witSnap.empty) setPendingWithdrawals(witSnap.docs.map(d => d.data()));
-      } catch (err) {
-        console.error('Failed to load pending requests:', err);
-      }
-    };
-    loadPending();
+    useEffect(() => {
+    const unsub1 = onSnapshot(collection(db, 'pendingDeposits'), (snap) => {
+      setPendingDeposits(snap.docs.map(d => d.data()));
+    }, (err) => console.error('Deposit sync error:', err));
+    const unsub2 = onSnapshot(collection(db, 'pendingWithdrawals'), (snap) => {
+      setPendingWithdrawals(snap.docs.map(d => d.data()));
+    }, (err) => console.error('Withdrawal sync error:', err));
+    return () => { unsub1(); unsub2(); };
   }, []);
 
 
