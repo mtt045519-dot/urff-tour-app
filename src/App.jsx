@@ -160,6 +160,13 @@ export default function App() {
   }, []);
   const [bannerCarouselIndex, setBannerCarouselIndex] = useState(0);
   const [logoUrl, setLogoUrl] = useState(LOGO_URL);
+  
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'appData', 'logo'), (docSnap) => {
+      if (docSnap.exists()) setLogoUrl(docSnap.data().url);
+    }, (err) => console.error('Logo sync error:', err));
+    return () => unsub();
+  }, []);
   const [appSettings, setAppSettings] = useState({
     paymentNumber: PAYMENT_NUMBER,
     contactNumber: '01704814095',
