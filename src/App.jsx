@@ -429,20 +429,31 @@ export default function App() {
       };
     }),
   ];
-  const getLeaderboardData = () => {
-    const mult = leaderboardPeriod === 'weekly' ? 0.35 : leaderboardPeriod === 'alltime' ? 1.8 : 1;
-    return leaderboardBase
-      .map(p => ({
-        ...p,
-        wins: Math.round(p.wins * mult),
-        earnings: Math.round(p.earnings * mult),
-        withdrawn: Math.round(p.withdrawn * mult),
-        matches: Math.round(p.matches * mult),
-      }))
+   const getLeaderboardData = () => {
+    const realData = registeredUsers.map(u => {
+      let wins = 0;
+      let matches = 0;
+      Object.values(matchResultsHistory).forEach(hist => {
+        const myEntry = hist.winners.find(w => (w.accountUid || '').trim() === u.uid);
+        if (myEntry) {
+          matches += 1;
+          if (parseInt(myEntry.rank) === 1) wins += 1;
+        }
+      });
+      return {
+        name: u.name,
+        avatar: u.avatar || '',
+        wins,
+        earnings: u.totalDeposited ? Math.round((u.winningBalance || 0) + (u.totalWithdrawn || 0)) : Math.round(u.winningBalance || 0),
+        withdrawn: Math.round(u.totalWithdrawn || 0),
+        kills: 0,
+        matches,
+      };
+    });
+    return realData
       .sort((a, b) => b[leaderboardMetric] - a[leaderboardMetric])
       .slice(0, 50);
   };
-
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
