@@ -3493,8 +3493,14 @@ ${buildUserContextBrief(uid)}`;
                   <div className={`w-10 h-10 rounded-full ${pm.icon ? '' : pm.color} flex items-center justify-center text-white text-xs font-black flex-shrink-0 overflow-hidden`}>
                     {pm.icon ? <img src={pm.icon} alt="" className="w-full h-full object-cover" /> : pm.abbr}
                   </div>
-                  <div className="flex-1">
+                                    <div className="flex-1">
                     <p className="text-xs font-bold">{pm.name}</p>
+                    <input
+                      value={pm.number || ''}
+                      onChange={(e) => setPaymentMethodsConfig(prev => prev.map(m => m.name === pm.name ? { ...m, number: e.target.value } : m))}
+                      placeholder="01XXXXXXXXX"
+                      className={`w-full ${t.input} border p-1.5 rounded-lg text-[11px] mt-1`}
+                    />
                     <button
                       type="button"
                       onClick={() => { setIconUploadTarget(pm.name); paymentIconFileInputRef.current && paymentIconFileInputRef.current.click(); }}
