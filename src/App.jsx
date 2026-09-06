@@ -2803,10 +2803,27 @@ ${buildUserContextBrief(uid)}`;
             </>
           )}
 
-          {adminTab === 'players' && (
+                    {adminTab === 'players' && (
             <div className="space-y-2">
-              <p className="text-xs font-bold flex items-center space-x-1.5"><Users className="w-4 h-4 text-indigo-400" /><span>Match Wise Joined Players</span></p>
-              {tournaments.map(mt => {
+              {!adminPlayersCategoryView ? (
+                <>
+                  <p className="text-xs font-bold flex items-center space-x-1.5"><Users className="w-4 h-4 text-indigo-400" /><span>Category Select Korun</span></p>
+                  {matchCategories.map(c => (
+                    <button key={c.id} onClick={() => setAdminPlayersCategoryView(c.id)} className={`w-full text-left ${t.card} border ${t.border} rounded-xl p-3 flex items-center justify-between`}>
+                      <div className="flex items-center space-x-2">
+                        <IconBox value={c.image} size="w-9 h-9" textSize="text-lg" />
+                        <p className="text-xs font-bold">{c.name}</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-500" />
+                    </button>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <button onClick={() => { setAdminPlayersCategoryView(null); setExpandedMatchId(null); }} className="flex items-center space-x-1.5 text-xs font-bold text-slate-400 mb-1">
+                    <ArrowLeft className="w-4 h-4" /><span>Category List</span>
+                  </button>
+                  {tournaments.filter(mt => mt.categoryId === adminPlayersCategoryView).map(mt => {
                 const list = matchParticipants[mt.id] || [];
                 const isOpen = expandedMatchId === mt.id;
                 return (
