@@ -295,6 +295,8 @@ export default function App() {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [adminTab, setAdminTab] = useState('tournaments');
   const [expandedMatchId, setExpandedMatchId] = useState(null);
+    const [adminPlayersCategoryView, setAdminPlayersCategoryView] = useState(null);
+  const [adminResultsCategoryView, setAdminResultsCategoryView] = useState(null);
 
   // Tournament Form (Admin)
   const [editingTourId, setEditingTourId] = useState(null);
