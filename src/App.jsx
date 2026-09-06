@@ -1160,10 +1160,10 @@ export default function App() {
     });
   };
 
-   const handleBannerImageUpload = (e) => {
+     const handleBannerImageUpload = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    compressImage(file).then(setBannerImageInput);
+    compressImage(file, 667, 0.7).then(setBannerImageInput);
   };
 
   const loadBannerFormFromSlot = (slotIdx) => {
