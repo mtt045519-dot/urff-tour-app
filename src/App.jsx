@@ -3344,17 +3344,52 @@ ${buildUserContextBrief(uid)}`;
             </div>
           )}
 
-          {adminTab === 'results' && (
+                    {adminTab === 'results' && (
             <div className="space-y-2">
-              {tournaments.filter(m => m.status !== 'completed').map(mt => (
-                <div key={mt.id} className={`${t.card} border ${t.border} rounded-xl p-3 flex items-center justify-between`}>
-                  <div className="flex items-center space-x-2">
-                    <IconBox value={mt.image} size="w-9 h-9" textSize="text-lg" />
-                    <div><p className="text-xs font-bold">{mt.title}</p><p className="text-[10px] text-slate-500">{matchParticipants[mt.id]?.length || 0} participants</p></div>
-                  </div>
-                  <button onClick={() => setMatchResultsModal(mt)} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold">Declare Result</button>
-                </div>
-              ))}
+              {!adminResultsCategoryView ? (
+                <>
+                  <p className="text-xs font-bold flex items-center space-x-1.5"><Trophy className="w-4 h-4 text-amber-400" /><span>Category Select Korun</span></p>
+                  {matchCategories.map(c => (
+                    <button key={c.id} onClick={() => setAdminResultsCategoryView(c.id)} className={`w-full text-left ${t.card} border ${t.border} rounded-xl p-3 flex items-center justify-between`}>
+                      <div className="flex items-center space-x-2">
+                        <IconBox value={c.image} size="w-9 h-9" textSize="text-lg" />
+                        <p className="text-xs font-bold">{c.name}</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-500" />
+                    </button>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <button onClick={() => setAdminResultsCategoryView(null)} className="flex items-center space-x-1.5 text-xs font-bold text-slate-400 mb-1">
+                    <ArrowLeft className="w-4 h-4" /><span>Category List</span>
+                  </button>
+                  {tournaments.filter(m => m.categoryId === adminResultsCategoryView).map(mt => (
+                    <div key={mt.id} className={`${t.card} border ${t.border} rounded-xl p-3 flex items-center justify-between`}>
+                      <div className="flex items-center space-x-2">
+                        <IconBox value={mt.image} size="w-9 h-9" textSize="text-lg" />
+                        <div><p className="text-xs font-bold">{mt.title}</p><p className="text-[10px] text-slate-500">{matchParticipants[mt.id]?.length || 0} participants{mt.status === 'completed' ? ' · Result Declared' : ''}</p></div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const list = matchParticipants[mt.id] || [];
+                          const entries = [];
+                          list.forEach(p => {
+                            (p.players || [{ ign: p.accountName, uid: p.accountUid }]).forEach(pl => {
+                              entries.push({ name: pl.ign, accountUid: p.accountUid, rank: '', prize: '', points: '' });
+                            });
+                          });
+                          setWinnerEntries(entries.length > 0 ? entries : [{ name: '', accountUid: '', rank: '', prize: '', points: '' }]);
+                          setMatchResultsModal(mt);
+                        }}
+                        className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold"
+                      >
+                        {mt.status === 'completed' ? 'Edit Result' : 'Declare Result'}
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           )}
 
