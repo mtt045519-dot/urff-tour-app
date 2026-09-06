@@ -87,15 +87,16 @@ export default function App() {
     const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
       const usersFromDb = snapshot.docs.map(d => d.data());
       setRegisteredUsers(usersFromDb);
-      const myDoc = usersFromDb.find(u => u.uid === user.uid);
+            const myDoc = usersFromDb.find(u => u.uid === user.uid);
       if (myDoc) {
-        setUser(prev => ({
-          ...prev,
-          depositBalance: myDoc.depositBalance ?? prev.depositBalance,
-          winningBalance: myDoc.winningBalance ?? prev.winningBalance,
-          totalDeposited: myDoc.totalDeposited ?? prev.totalDeposited,
-          totalWithdrawn: myDoc.totalWithdrawn ?? prev.totalWithdrawn,
-        }));
+        setUser(prev => {
+          const merged = {
+            ...prev,
+            ...myDoc,
+          };
+          localStorage.setItem('urff_session', JSON.stringify(merged));
+          return merged;
+        });
       }
     }, (err) => console.error('User sync error:', err));
     return () => unsub();
