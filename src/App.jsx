@@ -3664,11 +3664,11 @@ ${buildUserContextBrief(uid)}`;
                     <input value={w.points} onChange={(e) => { const arr = [...winnerEntries]; arr[idx].points = e.target.value; setWinnerEntries(arr); }} placeholder="Kill Points" type="number" className={`w-full ${t.input} border p-2 rounded-lg text-xs`} />
                     <input value={w.prize} onChange={(e) => { const arr = [...winnerEntries]; arr[idx].prize = e.target.value; setWinnerEntries(arr); }} placeholder="Prize (৳)" type="number" className={`w-full ${t.input} border p-2 rounded-lg text-xs col-span-2`} />
                   </div>
-                  {winnerEntries.length > 1 && (
+                                   {winnerEntries.length > 1 && (
                     <button onClick={() => setWinnerEntries(winnerEntries.filter((_, i) => i !== idx))} className="text-[10px] text-red-400 font-semibold">Remove entry</button>
                   )}
                 </div>
-              ))}
+              );})}
               <button onClick={() => setWinnerEntries([...winnerEntries, { name: '', accountUid: '', rank: '', prize: '', points: '' }])} className={`w-full py-2 ${t.input} border rounded-xl text-xs font-bold`}>+ Add Winner</button>
               <button onClick={handleDeclareResults} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">DECLARE & NOTIFY</button>
             </div>
