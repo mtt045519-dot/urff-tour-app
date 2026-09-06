@@ -2868,8 +2868,10 @@ ${buildUserContextBrief(uid)}`;
                       </div>
                     )}
                   </div>
-                );
+               );
               })}
+                </>
+              )}
             </div>
           )}
 
