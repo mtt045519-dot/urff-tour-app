@@ -3531,11 +3531,37 @@ ${buildUserContextBrief(uid)}`;
             );
           })()}
 
-          {adminTab === 'settings' && (
+                   {adminTab === 'settings' && !isSettingsUnlocked && (
+            <div className={`${t.card} border ${t.border} rounded-2xl p-6 space-y-4 text-center`}>
+              <Lock className="w-10 h-10 text-red-400 mx-auto" />
+              <p className="text-sm font-bold">Settings Locked</p>
+              <input
+                type="password"
+                value={settingsPasswordInput}
+                onChange={(e) => setSettingsPasswordInput(e.target.value)}
+                placeholder="Settings password"
+                className={`w-full ${t.input} border p-3 rounded-xl text-xs text-center`}
+              />
+              <button
+                onClick={() => {
+                  if (settingsPasswordInput === SETTINGS_PASSWORD) {
+                    setIsSettingsUnlocked(true);
+                    setSettingsPasswordInput('');
+                  } else {
+                    showToast('Bhul password!');
+                  }
+                }}
+                className="w-full py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold"
+              >
+                UNLOCK SETTINGS
+              </button>
+            </div>
+          )}
+
+          {adminTab === 'settings' && isSettingsUnlocked && (
             <>
             <div className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-3`}>
               <p className="text-xs font-bold flex items-center space-x-1.5"><Settings className="w-4 h-4 text-indigo-400" /><span>Contact & Payment Settings</span></p>
-
               <div>
                 <label className="text-[10px] text-slate-500">bKash / Nagad Number (users money pathabe ekhane)</label>
                 <input value={paymentNumberInput} onChange={(e) => setPaymentNumberInput(e.target.value)} placeholder="01XXXXXXXXX" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1`} />
