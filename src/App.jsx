@@ -3142,25 +3142,33 @@ ${buildUserContextBrief(uid)}`;
                   <button onClick={() => setAdminShopSearchQuery('')}><X className="w-3.5 h-3.5 text-slate-500" /></button>
                 )}
               </div>
-              <div className="space-y-2">
-                {shopItems
-                  .filter(i => i.title.toLowerCase().includes(adminShopSearchQuery.trim().toLowerCase()))
-                  .map(i => (
-                  <div key={i.id} className={`${t.card} border ${t.border} rounded-xl p-3 flex items-center justify-between`}>
-                    <div className="flex items-center space-x-2">
-                      <IconBox value={i.image} size="w-9 h-9" textSize="text-lg" />
-                      <div><p className="text-xs font-bold">{i.title}</p><p className="text-[10px] text-slate-500">৳{i.price} • {i.type === 'diamond' ? 'Diamonds' : 'Products'}</p></div>
-                    </div>
-                    <div className="flex space-x-2">
-                      <button onClick={() => handleEditShopItem(i)} className="p-1.5 bg-indigo-500/10 rounded-lg"><Edit3 className="w-3.5 h-3.5 text-indigo-400" /></button>
-                      <button onClick={() => handleDeleteShopItem(i.id)} className="p-1.5 bg-red-500/10 rounded-lg"><Trash2 className="w-3.5 h-3.5 text-red-400" /></button>
-                    </div>
+                            {['diamond', 'product'].map(typeGroup => {
+                const filtered = shopItems.filter(i =>
+                  (typeGroup === 'diamond' ? i.type !== 'product' : i.type === 'product') &&
+                  i.title.toLowerCase().includes(adminShopSearchQuery.trim().toLowerCase())
+                );
+                return (
+                  <div key={typeGroup} className="space-y-2">
+                    <p className="text-xs font-bold text-slate-400">{typeGroup === 'diamond' ? '💎 Diamond Tab Items' : '📦 Products Tab Items'}</p>
+                    {filtered.length === 0 ? (
+                      <p className="text-xs text-slate-500 text-center py-4">Kono item nei.</p>
+                    ) : (
+                      filtered.map(i => (
+                        <div key={i.id} className={`${t.card} border ${t.border} rounded-xl p-3 flex items-center justify-between`}>
+                          <div className="flex items-center space-x-2">
+                            <IconBox value={i.image} size="w-9 h-9" textSize="text-lg" />
+                            <div><p className="text-xs font-bold">{i.title}</p><p className="text-[10px] text-slate-500">৳{i.price}</p></div>
+                          </div>
+                          <div className="flex space-x-2">
+                            <button onClick={() => handleEditShopItem(i)} className="p-1.5 bg-indigo-500/10 rounded-lg"><Edit3 className="w-3.5 h-3.5 text-indigo-400" /></button>
+                            <button onClick={() => handleDeleteShopItem(i.id)} className="p-1.5 bg-red-500/10 rounded-lg"><Trash2 className="w-3.5 h-3.5 text-red-400" /></button>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
-                ))}
-                {shopItems.filter(i => i.title.toLowerCase().includes(adminShopSearchQuery.trim().toLowerCase())).length === 0 && (
-                  <p className="text-xs text-slate-500 text-center py-6">Ei naam e kono product paoa jayni.</p>
-                )}
-              </div>
+                );
+              })}
             </>
           )}
 
