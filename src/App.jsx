@@ -3672,7 +3672,7 @@ ${buildUserContextBrief(uid)}`;
           {showBanner && activeBanners.length > 0 && (() => {
             const currentBanner = activeBanners[bannerCarouselIndex % activeBanners.length];
             return (
-              <div className="relative rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 p-5 overflow-hidden">
+                            <div className="relative rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 p-5 overflow-hidden" style={{ aspectRatio: '667/340' }}>
                 {currentBanner.image && (
                   <img src={currentBanner.image} alt="" className="absolute inset-0 w-full h-full object-cover" />
                 )}
