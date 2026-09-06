@@ -1273,9 +1273,11 @@ export default function App() {
       number: profilePhoneInput.trim(),
       ffUid: profileFfUidInput.trim()
     };
-    setUser(prev => ({ ...prev, ...patch }));
+       const updatedUserObj = { ...user, ...patch };
+    setUser(updatedUserObj);
+    localStorage.setItem('urff_session', JSON.stringify(updatedUserObj));
     setRegisteredUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, ...patch } : u));
-        updateDoc(doc(db, 'users', user.uid), patch).catch(e => console.error(e));
+    updateDoc(doc(db, 'users', user.uid), patch).catch(e => console.error(e));
     setShowProfileSettings(false);
     showToast('Profile update kora hoyeche!');
   };
