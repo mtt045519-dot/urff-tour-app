@@ -296,6 +296,9 @@ export default function App() {
   const [adminTab, setAdminTab] = useState('tournaments');
   const [expandedMatchId, setExpandedMatchId] = useState(null);
     const [adminPlayersCategoryView, setAdminPlayersCategoryView] = useState(null);
+    const [isSettingsUnlocked, setIsSettingsUnlocked] = useState(false);
+  const [settingsPasswordInput, setSettingsPasswordInput] = useState('');
+  const SETTINGS_PASSWORD = 'jjiihhaadd';
   const [adminResultsCategoryView, setAdminResultsCategoryView] = useState(null);
 
   // Tournament Form (Admin)
