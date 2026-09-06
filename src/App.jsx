@@ -3647,8 +3647,16 @@ ${buildUserContextBrief(uid)}`;
                 <h3 className="font-bold text-sm">Declare Results — {matchResultsModal.title}</h3>
                 <button onClick={() => setMatchResultsModal(null)}><X className="w-5 h-5 text-slate-400" /></button>
               </div>
-              {winnerEntries.map((w, idx) => (
+                            {winnerEntries.map((w, idx) => {
+                const accHolder = registeredUsers.find(u => u.uid === (w.accountUid || '').trim());
+                const sameAsPrev = idx > 0 && winnerEntries[idx - 1].accountUid === w.accountUid;
+                return (
                 <div key={idx} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-2`}>
+                  {w.accountUid && !sameAsPrev && (
+                    <p className="text-[10px] font-bold text-amber-400">
+                      Account: {accHolder ? accHolder.name : 'Unknown'} ({w.accountUid})
+                    </p>
+                  )}
                   <div className="grid grid-cols-2 gap-2">
                     <input value={w.name} onChange={(e) => { const arr = [...winnerEntries]; arr[idx].name = e.target.value; setWinnerEntries(arr); }} placeholder="Name" className={`w-full ${t.input} border p-2 rounded-lg text-xs`} />
                     <input value={w.accountUid} onChange={(e) => { const arr = [...winnerEntries]; arr[idx].accountUid = e.target.value; setWinnerEntries(arr); }} placeholder="Account UID" className={`w-full ${t.input} border p-2 rounded-lg text-xs`} />
