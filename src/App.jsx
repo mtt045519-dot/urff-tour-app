@@ -3720,7 +3720,7 @@ ${buildUserContextBrief(uid)}`;
                 {currentBanner.image && (
                   <img src={currentBanner.image} alt="" className="absolute inset-0 w-full h-full object-cover" />
                 )}
-                <div className={currentBanner.image ? 'absolute inset-0 bg-black/30' : ''} />
+                                <div className={currentBanner.image ? 'absolute inset-0 bg-black/10' : ''} />
                 <button onClick={() => setShowBanner(false)} className="absolute top-2 right-2 text-white/70 z-10"><X className="w-4 h-4" /></button>
                 {currentBanner.title && <p className="relative text-white font-black text-lg leading-tight drop-shadow">{currentBanner.title}</p>}
                 {currentBanner.subtitle && <p className="relative text-indigo-100 text-xs mt-1 drop-shadow">{currentBanner.subtitle}</p>}
