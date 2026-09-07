@@ -3314,9 +3314,12 @@ ${buildUserContextBrief(uid)}`;
               <div className="space-y-2">
                 <p className="text-xs font-bold text-slate-400">Pending — Action Needed</p>
                 {pendingShopOrders.filter(o => o.status === 'pending').length === 0 && <p className="text-xs text-slate-500 text-center py-6">Kono pending order nei.</p>}
-                {pendingShopOrders.filter(o => o.status === 'pending').map(o => (
+                               {pendingShopOrders.filter(o => o.status === 'pending').map(o => (
                   <div key={o.id} className={`${t.card} border ${t.border} rounded-xl p-3 space-y-2`}>
-                    <div className="flex justify-between text-xs"><span className="font-bold">{o.name} ({o.uid})</span><span className="font-bold text-indigo-400">৳{o.chargedAmount ?? o.price} charged</span></div>
+                    <div className="flex items-center space-x-2">
+                      <IconBox value={o.itemImage} size="w-10 h-10" textSize="text-lg" />
+                      <div className="flex justify-between items-center flex-1"><span className="font-bold text-xs">{o.name} ({o.uid})</span><span className="font-bold text-indigo-400 text-xs">৳{o.chargedAmount ?? o.price} charged</span></div>
+                    </div>
                     {o.type === 'product' ? (
                       <p className="text-[11px] text-slate-500">
                         {o.itemTitle}{o.quantity > 1 ? ` x${o.quantity}` : ''}{o.selectedSize ? ` • Size: ${o.selectedSize}` : ''} • {o.deliveryMethod} • {o.deliveryName}, {o.deliveryPhone}<br />
