@@ -1079,13 +1079,14 @@ export default function App() {
     // Money is deducted right away when the order is placed; if admin rejects it later, it's refunded.
     applyBalanceChange(user.uid, { deposit: -deductDeposit, winning: -deductWinning });
 
-    setPendingShopOrders([{
+       setPendingShopOrders([{
       id: 'ord_' + Date.now(),
       uid: user.uid,
       name: user.name,
       number: user.number,
       type: isDiamond ? 'diamond' : 'product',
       itemTitle: selectedProduct.title,
+      itemImage: selectedProduct.image,
       price: selectedProduct.price,
       quantity: qty,
       subtotal: subtotal,
