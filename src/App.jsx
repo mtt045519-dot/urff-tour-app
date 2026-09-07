@@ -3382,13 +3382,11 @@ ${buildUserContextBrief(uid)}`;
                         <div><p className="text-xs font-bold">{mt.title}</p><p className="text-[10px] text-slate-500">{matchParticipants[mt.id]?.length || 0} participants{mt.status === 'completed' ? ' · Result Declared' : ''}</p></div>
                       </div>
                       <button
-                        onClick={() => {
+                                                onClick={() => {
                           const list = matchParticipants[mt.id] || [];
-                          const entries = [];
-                          list.forEach(p => {
-                            (p.players || [{ ign: p.accountName, uid: p.accountUid }]).forEach(pl => {
-                              entries.push({ name: pl.ign, accountUid: p.accountUid, rank: '', prize: '', points: '' });
-                            });
+                          const entries = list.map(p => {
+                            const playerNames = (p.players || [{ ign: p.accountName }]).map(pl => pl.ign);
+                            return { name: playerNames.join(', '), accountUid: p.accountUid, rank: '', prize: '', points: '' };
                           });
                           setWinnerEntries(entries.length > 0 ? entries : [{ name: '', accountUid: '', rank: '', prize: '', points: '' }]);
                           setMatchResultsModal(mt);
