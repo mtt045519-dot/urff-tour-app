@@ -3645,22 +3645,18 @@ ${buildUserContextBrief(uid)}`;
                 <h3 className="font-bold text-sm">Declare Results — {matchResultsModal.title}</h3>
                 <button onClick={() => setMatchResultsModal(null)}><X className="w-5 h-5 text-slate-400" /></button>
               </div>
-                            {winnerEntries.map((w, idx) => {
+                                         {winnerEntries.map((w, idx) => {
                 const accHolder = registeredUsers.find(u => u.uid === (w.accountUid || '').trim());
-                const sameAsPrev = idx > 0 && winnerEntries[idx - 1].accountUid === w.accountUid;
                 return (
                 <div key={idx} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-2`}>
-                  {w.accountUid && !sameAsPrev && (
-                    <p className="text-[10px] font-bold text-amber-400">
-                      Account: {accHolder ? accHolder.name : 'Unknown'} ({w.accountUid})
-                    </p>
-                  )}
-                  <div className="grid grid-cols-2 gap-2">
-                    <input value={w.name} onChange={(e) => { const arr = [...winnerEntries]; arr[idx].name = e.target.value; setWinnerEntries(arr); }} placeholder="Name" className={`w-full ${t.input} border p-2 rounded-lg text-xs`} />
-                    <input value={w.accountUid} onChange={(e) => { const arr = [...winnerEntries]; arr[idx].accountUid = e.target.value; setWinnerEntries(arr); }} placeholder="Account UID" className={`w-full ${t.input} border p-2 rounded-lg text-xs`} />
+                  <p className="text-[10px] font-bold text-amber-400">
+                    {accHolder ? accHolder.name : 'Unknown'} ({w.accountUid})
+                  </p>
+                  <p className="text-[11px] text-slate-400">Players: {w.name}</p>
+                  <div className="grid grid-cols-3 gap-2">
                     <input value={w.rank} onChange={(e) => { const arr = [...winnerEntries]; arr[idx].rank = e.target.value; setWinnerEntries(arr); }} placeholder="Rank" type="number" className={`w-full ${t.input} border p-2 rounded-lg text-xs`} />
                     <input value={w.points} onChange={(e) => { const arr = [...winnerEntries]; arr[idx].points = e.target.value; setWinnerEntries(arr); }} placeholder="Kill Points" type="number" className={`w-full ${t.input} border p-2 rounded-lg text-xs`} />
-                    <input value={w.prize} onChange={(e) => { const arr = [...winnerEntries]; arr[idx].prize = e.target.value; setWinnerEntries(arr); }} placeholder="Prize (৳)" type="number" className={`w-full ${t.input} border p-2 rounded-lg text-xs col-span-2`} />
+                    <input value={w.prize} onChange={(e) => { const arr = [...winnerEntries]; arr[idx].prize = e.target.value; setWinnerEntries(arr); }} placeholder="Prize (৳)" type="number" className={`w-full ${t.input} border p-2 rounded-lg text-xs`} />
                   </div>
                                    {winnerEntries.length > 1 && (
                     <button onClick={() => setWinnerEntries(winnerEntries.filter((_, i) => i !== idx))} className="text-[10px] text-red-400 font-semibold">Remove entry</button>
