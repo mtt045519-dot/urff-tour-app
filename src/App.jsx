@@ -4163,21 +4163,28 @@ ${buildUserContextBrief(uid)}`;
               {Object.keys(matchResultsHistory).length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-6">Ekhono kono match er result declare kora hoyni.</p>
               ) : (
-                Object.entries(matchResultsHistory)
+                               Object.entries(matchResultsHistory)
                   .sort((a, b) => (b[0] > a[0] ? 1 : -1))
                   .map(([matchId, res]) => (
                     <div key={matchId} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-2`}>
                       <div>
                         <p className="text-xs font-bold">{res.title}</p>
-                        <p className="text-[10px] text-slate-500">{res.category} • {res.declaredAt}</p>
+                        <p className="text-[10px] text-slate-500">{res.category} · {res.declaredAt}</p>
                       </div>
                       <div className="space-y-1.5">
-                        {res.winners.map((w, idx) => (
-                          <div key={idx} className="flex items-center justify-between text-[11px]">
-                            <span className="font-semibold">#{w.rank} {w.name} <span className="text-slate-500 font-mono">({w.accountUid})</span></span>
-                            <span className="text-slate-400">{w.points} pts • <span className="text-emerald-400 font-bold">৳{w.prize}</span></span>
+                        {[...res.winners].sort((a, b) => (parseInt(a.rank) || 999) - (parseInt(b.rank) || 999)).map((w, idx) => {
+                          const accHolder = registeredUsers.find(u => u.uid === (w.accountUid || '').trim());
+                          return (
+                          <div key={idx} className="flex items-center space-x-2 text-[11px]">
+                            <div className="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                              {accHolder && accHolder.avatar ? <img src={accHolder.avatar} alt="" className="w-full h-full object-cover" /> : <span className="text-[9px]">{(accHolder ? accHolder.name : '?').charAt(0)}</span>}
+                            </div>
+                            <div className="flex-1 min-w-0 flex items-center justify-between">
+                              <span className="font-semibold truncate">#{w.rank} {w.name} <span className="text-slate-500 font-mono">({w.accountUid})</span></span>
+                              <span className="text-slate-400 flex-shrink-0 ml-1">{w.points} pts · <span className="text-emerald-400 font-bold">৳{w.prize}</span></span>
+                            </div>
                           </div>
-                        ))}
+                        );})}
                       </div>
                     </div>
                   ))
