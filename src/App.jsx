@@ -2354,15 +2354,20 @@ ${buildUserContextBrief(uid)}`;
                 </button>
                 {showAllResultsInfo && (
                   <div className={`${t.card} border ${t.border} rounded-xl p-4 -mt-2 space-y-2`}>
-                    {hist.winners.map((w, idx) => (
-                      <div key={idx} className={`flex items-center justify-between text-xs p-2 rounded-lg ${(w.accountUid || '').trim() === user.uid ? 'bg-emerald-500/10 border border-emerald-500/30' : ''}`}>
-                        <span className="flex items-center space-x-2 min-w-0">
+                                        {[...hist.winners].sort((a, b) => (parseInt(a.rank) || 999) - (parseInt(b.rank) || 999)).map((w, idx) => {
+                      const accHolder = registeredUsers.find(u => u.uid === (w.accountUid || '').trim());
+                      return (
+                      <div key={idx} className={`flex items-center space-x-2 text-xs p-2 rounded-lg ${(w.accountUid || '').trim() === user.uid ? 'bg-emerald-500/10 border border-emerald-500/30' : ''}`}>
+                        <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {accHolder && accHolder.avatar ? <img src={accHolder.avatar} alt="" className="w-full h-full object-cover" /> : <span className="text-[10px]">{(accHolder ? accHolder.name : '?').charAt(0)}</span>}
+                        </div>
+                        <span className="flex items-center space-x-2 min-w-0 flex-1">
                           <span className="font-bold text-amber-400 flex-shrink-0">#{w.rank}</span>
                           <span className="truncate">{w.name} <span className="text-slate-500 font-mono">({w.accountUid})</span></span>
                         </span>
-                        <span className="flex-shrink-0 text-slate-400">{w.points} pts • <span className="text-emerald-400 font-bold">৳{w.prize}</span></span>
+                        <span className="flex-shrink-0 text-slate-400">{w.points} pts · <span className="text-emerald-400 font-bold">৳{w.prize}</span></span>
                       </div>
-                    ))}
+                    );})}
                   </div>
                 )}
               </>
