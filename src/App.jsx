@@ -172,7 +172,8 @@ export default function App() {
     paymentNumber: PAYMENT_NUMBER,
     contactNumber: '01704814095',
     telegramLink: '',
-    withdrawRules: 'প্রতিদিন সর্বোচ্চ ২ বার Withdraw করা যাবে।\nএকবারে সর্বোচ্চ ৫০০ টাকা Withdraw করা যাবে।\nWithdraw Request দেওয়ার পর ধৈর্য ধরে অপেক্ষা করুন।\nপ্রতিদিনের Withdraw Proof আমাদের অফিসিয়াল Telegram Channel-এ প্রকাশ করা হয়।\nMinimum withdrawal: ৳100.',
+       withdrawRules: 'প্রতিদিন সর্বোচ্চ ২ বার Withdraw করা যাবে।\nএকবারে সর্বোচ্চ ৫০০ টাকা Withdraw করা যাবে।\nWithdraw Request দেওয়ার পর ধৈর্য ধরে অপেক্ষা করুন।\nপ্রতিদিনের Withdraw Proof আমাদের অফিসিয়াল Telegram Channel-এ প্রকাশ করা হয়।\nMinimum withdrawal: ৳100.',
+    codCharge: 150,
   });
   
   const setAppSettingsSynced = (newSettings) => {
