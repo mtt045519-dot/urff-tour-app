@@ -3281,7 +3281,11 @@ ${buildUserContextBrief(uid)}`;
               {pendingDeposits.map(d => (
                 <div key={d.id} className={`${t.card} border ${t.border} rounded-xl p-3 space-y-2`}>
                   <div className="flex justify-between text-xs"><span className="font-bold">{d.name} ({d.uid})</span><span className="font-bold text-emerald-400">৳{d.amount}</span></div>
-                  <p className="text-[11px] text-slate-500">{d.method} • TrxID: {d.trxId}</p>
+                                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                    <span>{d.method}</span>
+                    <button onClick={() => copyToClipboard(d.trxId, 'TrxID')} className="flex items-center space-x-1 underline"><span>TrxID: {d.trxId}</span><Copy className="w-3 h-3" /></button>
+                    {d.senderNumber && <button onClick={() => copyToClipboard(d.senderNumber, 'Number')} className="flex items-center space-x-1 underline"><span>From: {d.senderNumber}</span><Copy className="w-3 h-3" /></button>}
+                  </div>
                   <div className="flex space-x-2">
                     <button onClick={() => handleApproveDeposit(d)} className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center justify-center space-x-1"><CheckCircle2 className="w-3.5 h-3.5" /><span>Approve</span></button>
                     <button onClick={() => setRejectModalData({ type: 'deposit', item: d })} className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold flex items-center justify-center space-x-1"><XCircle className="w-3.5 h-3.5" /><span>Reject</span></button>
