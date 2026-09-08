@@ -3593,6 +3593,10 @@ ${buildUserContextBrief(uid)}`;
                 <label className="text-[10px] text-slate-500">Telegram Channel / Group Link</label>
                 <input value={telegramLinkInput} onChange={(e) => setTelegramLinkInput(e.target.value)} placeholder="https://t.me/yourchannel" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1`} />
               </div>
+                            <div>
+                <label className="text-[10px] text-slate-500">COD Delivery Charge (Taka)</label>
+                <input type="number" value={appSettings.codCharge} onChange={(e) => setAppSettingsSynced({ ...appSettings, codCharge: parseFloat(e.target.value) || 0 })} className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1`} />
+              </div>
               <div>
                 <label className="text-[10px] text-slate-500">Withdraw Page Rules/Notes (users ei text dekhbe)</label>
                 <textarea value={withdrawRulesInput} onChange={(e) => setWithdrawRulesInput(e.target.value)} rows={5} placeholder="Ekek line-e ekek rule likhun" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1`} />
