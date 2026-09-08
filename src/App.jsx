@@ -4584,9 +4584,13 @@ ${buildUserContextBrief(uid)}`;
                 <label className="text-xs text-slate-400">Amount (Taka)</label>
                 <input type="number" value={amountInput} onChange={(e) => setAmountInput(e.target.value)} placeholder="e.g. 100" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1`} />
               </div>
-              <div>
+                           <div>
                 <label className="text-xs text-slate-400">Transaction ID (TrxID)</label>
                 <input value={trxIdInput} onChange={(e) => setTrxIdInput(e.target.value)} placeholder="e.g. 9N876XVC" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1`} />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400">Apni Ei Number Theke Taka Pathiyechen</label>
+                <input value={senderNumberInput} onChange={(e) => setSenderNumberInput(e.target.value)} placeholder="017XXXXXXXX" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1`} />
               </div>
 
               <button onClick={handleAddMoneySubmit} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">SUBMIT REQUEST</button>
