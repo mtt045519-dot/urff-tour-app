@@ -244,7 +244,6 @@ export default function App() {
   const [orderNote, setOrderNote] = useState('');
   const [shopDeliveryMethod, setShopDeliveryMethod] = useState('COD');
   const [selectedSize, setSelectedSize] = useState('');
-  const COD_ADVANCE_CHARGE = 150;
   const [showMyOrders, setShowMyOrders] = useState(false);
   const [showBalanceShare, setShowBalanceShare] = useState(false);
   const [shareTargetUid, setShareTargetUid] = useState('');
