@@ -180,9 +180,9 @@ export default function App() {
     setAppSettings(newSettings);
     setDoc(doc(db, 'appData', 'settings'), newSettings).catch(e => console.error(e));
   };
-  useEffect(() => {
+   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'appData', 'settings'), (docSnap) => {
-      if (docSnap.exists()) setAppSettings(docSnap.data());
+      if (docSnap.exists()) setAppSettings(prev => ({ ...prev, ...docSnap.data(), codCharge: docSnap.data().codCharge ?? prev.codCharge ?? 150 }));
     }, (err) => console.error('Settings sync error:', err));
     return () => unsub();
   }, []);
