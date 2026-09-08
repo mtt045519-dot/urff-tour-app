@@ -3336,7 +3336,11 @@ ${buildUserContextBrief(uid)}`;
                         {o.deliveryMethod === 'COD' && <><br /><span className="text-amber-400 font-semibold">Product price ৳{o.price} cash e nite hobe delivery-r shomoy (advance ৳{o.chargedAmount} already deduct kora hoyeche).</span></>}
                       </p>
                     ) : (
-                      <p className="text-[11px] text-slate-500">{o.itemTitle} • FF UID: {o.ffUid}{o.number ? ` • Ph: ${o.number}` : ''}</p>
+                      <p className="text-[11px] text-slate-500 flex items-center flex-wrap gap-1">
+  <span>{o.itemTitle} · FF UID: {o.ffUid}</span>
+  <button onClick={() => copyToClipboard(o.ffUid, 'UID')} className="inline-flex"><Copy className="w-3 h-3 text-indigo-400" /></button>
+  {o.number ? <span>· Ph: {o.number}</span> : ''}
+</p>
                     )}
                     <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-lg p-2 grid grid-cols-4 gap-1 text-center`}>
                       <div><p className="text-[9px] text-slate-500">Deposit Bal</p><p className="text-xs font-bold text-indigo-400">৳{o.depositBalance ?? 0}</p></div>
