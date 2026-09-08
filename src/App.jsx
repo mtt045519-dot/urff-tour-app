@@ -3360,7 +3360,7 @@ ${buildUserContextBrief(uid)}`;
                       <div className="flex justify-between text-xs"><span className="font-bold">{o.name} ({o.uid})</span><span className="font-bold text-indigo-400">৳{o.price}</span></div>
                       <p className="text-[11px] text-slate-500">
                         {o.itemTitle}{o.quantity > 1 ? ` x${o.quantity}` : ''}{o.selectedSize ? ` • Size: ${o.selectedSize}` : ''} • {o.deliveryMethod} • {o.deliveryName}, {o.deliveryPhone}<br />
-                        Address: {o.deliveryAddress}
+                        Address: {o.deliveryAddress} <button onClick={() => copyToClipboard(o.deliveryAddress, 'Address')} className="inline-flex items-center ml-1"><Copy className="w-3 h-3 inline text-indigo-400" /></button>
                         {o.orderNote && <><br />Note: {o.orderNote}</>}
                         {o.deliveryMethod === 'COD' && <><br /><span className="text-amber-400 font-semibold">Cash on delivery collect korte hobe: ৳{o.price}</span></>}
                       </p>
