@@ -4660,8 +4660,8 @@ ${buildUserContextBrief(uid)}`;
         const isCOD = !isDiamond && shopDeliveryMethod === 'COD';
         const qty = isDiamond ? 1 : Math.max(1, orderQuantity);
         const subtotal = selectedProduct.price * qty;
-        const deliveryChargeShown = isCOD ? COD_ADVANCE_CHARGE : 0;
-        const totalPayableNow = isCOD ? COD_ADVANCE_CHARGE : subtotal;
+        const deliveryChargeShown = isCOD ? appSettings.codCharge : 0;
+        const totalPayableNow = isCOD ? appSettings.codCharge : subtotal;
         const totalBalance = user.depositBalance + user.winningBalance;
         const closeModal = () => { setSelectedProduct(null); setFfUidInput(''); setDeliveryName(''); setDeliveryPhone(''); setDeliveryAddress(''); setSelectedSize(''); setOrderQuantity(1); setOrderNote(''); };
         return (
