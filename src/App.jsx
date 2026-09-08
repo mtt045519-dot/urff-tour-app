@@ -229,6 +229,7 @@ export default function App() {
   const [paymentMethod, setPaymentMethod] = useState('bKash');
   const [amountInput, setAmountInput] = useState('');
   const [trxIdInput, setTrxIdInput] = useState('');
+    const [senderNumberInput, setSenderNumberInput] = useState('');
   const [withdrawAccountInput, setWithdrawAccountInput] = useState('');
   const [showHistory, setShowHistory] = useState(false);
 
