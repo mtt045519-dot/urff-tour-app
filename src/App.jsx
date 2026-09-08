@@ -4848,7 +4848,7 @@ ${buildUserContextBrief(uid)}`;
                           </div>
                           <p className="text-xs font-bold">Cash on Delivery</p>
                           <p className="text-[9px] text-slate-500">Delivery te cash pay</p>
-                          <p className="text-[9px] text-amber-400 mt-0.5">Delivery ৳{COD_ADVANCE_CHARGE} instant katbe</p>
+                          <p className="text-[9px] text-amber-400 mt-0.5">Delivery appSettings.codCharge} instant katbe</p>
                         </button>
                       </div>
                     </div>
@@ -4875,7 +4875,7 @@ ${buildUserContextBrief(uid)}`;
                   {isDiamond
                     ? `Order confirm korle apnar balance theke ৳${selectedProduct.price} ekhoni kete newa hobe. Order reject hole taka ferot ashbe.`
                     : isCOD
-                      ? `Cash on Delivery-r jonno delivery charge ৳${COD_ADVANCE_CHARGE} ekhoni advance hishebe kete newa hobe. Baki ৳${subtotal} product hate paile cash e dite hobe. Order reject hole advance ferot ashbe.`
+                      ? `Cash on Delivery-r jonno delivery charge appSettings.codCharge} ekhoni advance hishebe kete newa hobe. Baki ৳${subtotal} product hate paile cash e dite hobe. Order reject hole advance ferot ashbe.`
                       : `Order confirm korle apnar balance theke full ৳${subtotal} ekhoni kete newa hobe. Order reject hole taka ferot ashbe.`}
                 </p>
 
