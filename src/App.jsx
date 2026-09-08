@@ -3331,7 +3331,7 @@ ${buildUserContextBrief(uid)}`;
                     {o.type === 'product' ? (
                       <p className="text-[11px] text-slate-500">
                         {o.itemTitle}{o.quantity > 1 ? ` x${o.quantity}` : ''}{o.selectedSize ? ` • Size: ${o.selectedSize}` : ''} • {o.deliveryMethod} • {o.deliveryName}, {o.deliveryPhone}<br />
-                        Address: {o.deliveryAddress}
+                                               Address: {o.deliveryAddress} <button onClick={() => copyToClipboard(o.deliveryAddress, 'Address')} className="inline-flex items-center ml-1"><Copy className="w-3 h-3 inline text-indigo-400" /></button>
                         {o.orderNote && <><br />Note: {o.orderNote}</>}
                         {o.deliveryMethod === 'COD' && <><br /><span className="text-amber-400 font-semibold">Product price ৳{o.price} cash e nite hobe delivery-r shomoy (advance ৳{o.chargedAmount} already deduct kora hoyeche).</span></>}
                       </p>
