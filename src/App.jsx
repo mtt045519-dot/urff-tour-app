@@ -1062,12 +1062,12 @@ export default function App() {
     // when it reaches the customer. Online-paid products and diamond top-ups are
     // charged the full subtotal (price × quantity) right away.
     const isCOD = !isDiamond && shopDeliveryMethod === 'COD';
-    const chargeAmount = isCOD ? COD_ADVANCE_CHARGE : subtotal;
+    const chargeAmount = isCOD ? appSettings.codCharge : subtotal;
     const codDue = isCOD ? subtotal : 0;
 
     const totalWallet = user.depositBalance + user.winningBalance;
     if (totalWallet < chargeAmount) {
-      showToast(isCOD ? `Delivery charge ৳${COD_ADVANCE_CHARGE} er jonno oporjapto balance!` : 'Oporjapto balance!');
+      showToast(isCOD ? `Delivery charge ৳${appSettings.codCharge} er jonno oporjapto balance!` : 'Oporjapto balance!');
       return;
     }
 
@@ -1111,7 +1111,7 @@ export default function App() {
       status: 'pending',
       rejectReason: '',
     }, ...pendingShopOrders]);
-    showToast(isCOD ? `Delivery charge ৳${COD_ADVANCE_CHARGE} deduct hoyeche. Baki ৳${subtotal} cash e dite hobe.` : 'Order admin er kache pathano hoyeche! Apnar balance theke taka kata hoyeche.');
+    showToast(isCOD ? `Delivery charge ৳${appSettings.codCharge} deduct hoyeche. Baki ৳${subtotal} cash e dite hobe.` : 'Order admin er kache pathano hoyeche! Apnar balance theke taka kata hoyeche.');
     setSelectedProduct(null);
     setActiveTab('shop');
     setFfUidInput('');
