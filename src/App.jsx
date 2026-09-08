@@ -1223,12 +1223,13 @@ export default function App() {
     setWithdrawRulesInput(appSettings.withdrawRules);
   };
 
-  const handleSaveAppSettings = () => {
+    const handleSaveAppSettings = () => {
     if (!paymentNumberInput.trim() || !contactNumberInput.trim()) {
       showToast('Payment number ebong contact number din');
       return;
     }
     setAppSettingsSynced({
+      ...appSettings,
       paymentNumber: paymentNumberInput.trim(),
       contactNumber: contactNumberInput.trim(),
       telegramLink: telegramLinkInput.trim(),
