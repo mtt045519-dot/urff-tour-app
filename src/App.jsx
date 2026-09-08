@@ -986,17 +986,20 @@ export default function App() {
     showToast('Match e sofolbhabe join korechen!');
   };
 
-  const handleAddMoneySubmit = () => {
+    const handleAddMoneySubmit = () => {
     const amt = parseFloat(amountInput);
-    if (!amt || amt <= 0 || !trxIdInput) {
-      showToast('Sothik poriman ebong TrxID din');
+    if (!amt || amt <= 0 || !trxIdInput || !senderNumberInput.trim()) {
+      showToast('Sothik poriman, TrxID ebong Number din');
       return;
     }
-    setPendingDeposits([{ id: 'dep_' + Date.now(), uid: user.uid, name: user.name, amount: amt, method: paymentMethod, trxId: trxIdInput }, ...pendingDeposits]);
-    setDoc(doc(db, 'pendingDeposits', 'dep_' + Date.now()), { id: 'dep_' + Date.now(), uid: user.uid, name: user.name, amount: amt, method: paymentMethod, trxId: trxIdInput }).catch(e => console.error(e));
+    const depId = 'dep_' + Date.now();
+    const depObj = { id: depId, uid: user.uid, name: user.name, amount: amt, method: paymentMethod, trxId: trxIdInput, senderNumber: senderNumberInput.trim() };
+    setPendingDeposits([depObj, ...pendingDeposits]);
+    setDoc(doc(db, 'pendingDeposits', depId), depObj).catch(e => console.error(e));
     setWalletAction(null);
     setAmountInput('');
     setTrxIdInput('');
+    setSenderNumberInput('');
     showToast('Deposit request admin er kache pathano hoyeche!');
   };
 
