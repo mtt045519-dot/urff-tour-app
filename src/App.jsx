@@ -4243,7 +4243,7 @@ ${buildUserContextBrief(uid)}`;
                         ৳{o.price}{o.quantity > 1 ? ` x${o.quantity}` : ''}{o.selectedSize ? ` • Size: ${o.selectedSize}` : ''} {o.type === 'product' ? `• ${o.deliveryMethod}` : `• FF UID: ${o.ffUid}`}
                       </p>
                       {o.type === 'product' && o.deliveryMethod === 'COD' && o.status !== 'rejected' && (
-                        <p className="text-[10px] text-amber-400">Advance ৳{o.chargedAmount ?? COD_ADVANCE_CHARGE} deducted • ৳{o.codDue || o.price} due on delivery (cash)</p>
+                        <p className="text-[10px] text-amber-400">Advance ৳{o.chargedAmount ?? appSettings.codCharge} deducted • ৳{o.codDue || o.price} due on delivery (cash)</p>
                       )}
                       {o.status === 'rejected' && o.rejectReason && (
                         <p className="text-[10px] text-red-400">Reject reason: {o.rejectReason}</p>
