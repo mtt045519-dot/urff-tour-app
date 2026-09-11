@@ -1,1 +1,8 @@
-
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "app.vercel.urff_tour_app.twa",
+    "sha256_cert_fingerprints": ["84:40:E8:0D:58:52:C4:AE:33:F8:9F:42:5C:B1:43:FE:43:AE:2A:20:F9:82:02:98:C0:FE:ED:A8:45:D1:07:EA"]
+  }
+}]
