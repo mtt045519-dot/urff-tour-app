@@ -2598,7 +2598,7 @@ ${buildUserContextBrief(uid)}`;
             />
             <button
               onClick={() => {
-                if (adminPasswordInput === ADMIN_PASSWORD) {
+                               if (adminPasswordInput === remoteAdminPassword) {
                   setIsAdminAuthenticated(true);
                   setAdminPasswordInput('');
                   showToast('Admin panel e swagotom!');
