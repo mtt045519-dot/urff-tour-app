@@ -294,6 +294,14 @@ export default function App() {
   // Admin Panel State
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+    const [remoteAdminPassword, setRemoteAdminPassword] = useState(null);
+  useEffect(() => {
+    getDocs(collection(db, 'appData')).then(snap => {
+      const secDoc = snap.docs.find(d => d.id === 'security');
+      if (secDoc) setRemoteAdminPassword(secDoc.data().adminPassword);
+      else setRemoteAdminPassword('ttaammjjiidd');
+    }).catch(() => setRemoteAdminPassword('ttaammjjiidd'));
+  }, []);
   const [adminTab, setAdminTab] = useState('tournaments');
   const [expandedMatchId, setExpandedMatchId] = useState(null);
     const [adminPlayersCategoryView, setAdminPlayersCategoryView] = useState(null);
