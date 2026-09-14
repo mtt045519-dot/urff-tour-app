@@ -101,6 +101,24 @@ export default function App() {
     }, (err) => console.error('User sync error:', err));
     return () => unsub();
   }, [user.uid]);
+  
+  useEffect(() => {
+    if (user.uid === 'GMHF84' || !user.uid) return;
+    const setupNotifications = async () => {
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          const token = await getToken(messaging, { vapidKey: 'BNTmsLS6uvZHSQeOHEcuW4Y4EE2qUwNlgL5jTg2FLAs-TFrQzGQKNepnbCLnGHlZN-Iz79PMHjrIMFTSgoebF_s' });
+          if (token) {
+            await setDoc(doc(db, 'fcmTokens', user.uid), { token, uid: user.uid }, { merge: true });
+          }
+        }
+      } catch (err) {
+        console.error('Notification setup error:', err);
+      }
+    };
+    setupNotifications();
+  }, [user.uid]);
 
   const getUserBalance = (uid) => {
     if (uid === user.uid) return { depositBalance: user.depositBalance, winningBalance: user.winningBalance, totalDeposited: user.totalDeposited || 0 };
