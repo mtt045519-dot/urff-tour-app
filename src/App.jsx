@@ -106,7 +106,8 @@ export default function App() {
     if (user.uid === 'GMHF84' || !user.uid) return;
     const setupNotifications = async () => {
       try {
-        const permission = await Notification.requestPermission();
+                const permission = await Notification.requestPermission();
+        showToast('Permission: ' + permission);
         if (permission === 'granted') {
           const token = await getToken(messaging, { vapidKey: 'BNTmsLS6uvZHSQeOHEcuW4Y4EE2qUwNlgL5jTg2FLAs-TFrQzGQKNepnbCLnGHlZN-Iz79PMHjrIMFTSgoebF_s' });
           if (token) {
