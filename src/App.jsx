@@ -113,8 +113,8 @@ export default function App() {
             await setDoc(doc(db, 'fcmTokens', user.uid), { token, uid: user.uid }, { merge: true });
           }
         }
-      } catch (err) {
-        console.error('Notification setup error:', err);
+            } catch (err) {
+        showToast('Notif error: ' + err.message);
       }
     };
     setupNotifications();
