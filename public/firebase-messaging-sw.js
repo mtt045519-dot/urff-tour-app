@@ -2,7 +2,7 @@ importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
 
 firebase.initializeApp({
-  apiKey: "AIzaSyD3_UWOLDDYfjQjeWCBY3q7Ou-lwkmOGdo",
+    apiKey: "AIzaSyD3_UWOLDDYfjQjeWCBY3q70u-lwkmOGdo",
   authDomain: "urfftour.firebaseapp.com",
   projectId: "urfftour",
   storageBucket: "urfftour.firebasestorage.app",
