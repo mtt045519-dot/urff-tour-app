@@ -4,7 +4,7 @@ import { getAuth } from "firebase/auth";
 import { getMessaging } from "firebase/messaging";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyD3_UWOLDDYfjQjeWCBY3q7Ou-lwkmOGdo",
+    apiKey: "AIzaSyD3_UWOLDDYfjQjeWCBY3q70u-lwkmOGdo",
   authDomain: "urfftour.firebaseapp.com",
   projectId: "urfftour",
   storageBucket: "urfftour.firebasestorage.app",
