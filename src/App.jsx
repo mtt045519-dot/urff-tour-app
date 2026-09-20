@@ -4892,7 +4892,7 @@ ${buildUserContextBrief(uid)}`;
                           </div>
                           <p className="text-xs font-bold">Cash on Delivery</p>
                           <p className="text-[9px] text-slate-500">Delivery te cash pay</p>
-                          <p className="text-[9px] text-amber-400 mt-0.5">Delivery appSettings.codCharge} instant katbe</p>
+                          <p className="text-[9px] text-amber-400 mt-0.5">Delivery {appSettings?.codCharge} instant katbe</p>
                         </button>
                       </div>
                     </div>
