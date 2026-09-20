@@ -1985,12 +1985,18 @@ ${buildUserContextBrief(uid)}`;
     showToast('Reject kora hoyeche!');
   };
 
-  const handleSendNotification = () => {
+   const handleSendNotification = () => {
     if (!notifTitle.trim() || !notifMessage.trim()) {
       showToast('Title ebong message din');
       return;
     }
-    setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: notifTitle, message: notifMessage, time: 'Just now', targetUid: notifTargetUid.trim() || 'ALL' }, ...prev]);
+    const target = notifTargetUid.trim() || 'ALL';
+    setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: notifTitle, message: notifMessage, time: 'Just now', targetUid: target }, ...prev]);
+    fetch('/api/send-notification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: notifTitle, message: notifMessage, targetUid: target })
+    }).catch(err => console.error('Push send error:', err));
     setNotifTitle('');
     setNotifMessage('');
     setNotifTargetUid('');
