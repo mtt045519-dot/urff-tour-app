@@ -2405,9 +2405,10 @@ ${buildUserContextBrief(uid)}`;
             </div>
           </div>
 
-          <div className={`${t.card} border ${t.border} rounded-xl p-4 space-y-1`}>
+                   <div className={`${t.card} border ${t.border} rounded-xl p-4 space-y-1`}>
             <p className="text-xs font-bold text-slate-400">Match Time</p>
-            <p className="text-sm font-semibold">{mt.time}</p>
+            <p className="text-base font-bold">{mt.time}</p>
+            <CountdownTimer timeStr={mt.time} started={mt.started} />
           </div>
 
           <div className={`${t.card} border ${t.border} rounded-xl p-4 space-y-1`}>
