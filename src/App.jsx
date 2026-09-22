@@ -2337,15 +2337,18 @@ ${buildUserContextBrief(uid)}`;
         </div>
       </div>
 
-      <div className="flex items-center justify-between text-[11px]">
+            <div className="flex items-center justify-between text-[11px]">
         <div className="flex items-center space-x-1 text-slate-400">
           <Clock className="w-3 h-3" />
-          <span>{mt.time}</span>
+          <span className="text-sm font-semibold">{mt.time}</span>
         </div>
         <div className="flex items-center space-x-1 text-slate-400">
           <Users className="w-3 h-3" />
           <span>{mt.slotsFilled}/{mt.totalSlots}</span>
         </div>
+      </div>
+      <div className="text-center">
+        <CountdownTimer timeStr={mt.time} started={mt.started} />
       </div>
 
       <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
