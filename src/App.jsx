@@ -974,43 +974,65 @@ export default function App() {
       return;
     }
 
-    let remaining = totalFee;
-    let deductDeposit = 0;
-    let deductWinning = 0;
+        const tourRef = doc(db, 'tournaments', selectedMatch.id);
+    runTransaction(db, async (transaction) => {
+      const tourDoc = await transaction.get(tourRef);
+      if (!tourDoc.exists()) throw new Error('Match ar nei');
+      const currentData = tourDoc.data();
+      if ((currentData.slotsFilled || 0) + playerCount > currentData.totalSlots) {
+        throw new Error('SLOTS_FULL');
+      }
+      if (currentData.started) {
+        throw new Error('ALREADY_STARTED');
+      }
+      transaction.update(tourRef, { slotsFilled: (currentData.slotsFilled || 0) + playerCount });
+    }).then(() => {
+      let remaining = totalFee;
+      let deductDeposit = 0;
+      let deductWinning = 0;
 
-    if (user.depositBalance >= remaining) {
-      deductDeposit = remaining;
-    } else {
-      deductDeposit = user.depositBalance;
-      deductWinning = remaining - user.depositBalance;
-    }
+      if (user.depositBalance >= remaining) {
+        deductDeposit = remaining;
+      } else {
+        deductDeposit = user.depositBalance;
+        deductWinning = remaining - user.depositBalance;
+      }
 
-    applyBalanceChange(user.uid, { deposit: -deductDeposit, winning: -deductWinning });
+      applyBalanceChange(user.uid, { deposit: -deductDeposit, winning: -deductWinning });
 
-    setTournaments(tournaments.map(m => m.id === selectedMatch.id ? { ...m, slotsFilled: m.slotsFilled + playerCount } : m));
-    updateDoc(doc(db, 'tournaments', selectedMatch.id), { slotsFilled: increment(playerCount) }).catch(e => console.error(e));
+      setTournaments(prev => prev.map(m => m.id === selectedMatch.id ? { ...m, slotsFilled: m.slotsFilled + playerCount } : m));
 
-    const pList = matchParticipants[selectedMatch.id] || [];
-    setMatchParticipants({
-      ...matchParticipants,
-      [selectedMatch.id]: [
-        ...pList,
-        {
-          accountName: user.name,
-          accountUid: user.uid,
-          number: user.number,
-          mode: selectedMatch.mode,
-          entryFeePaid: totalFee,
-          players: entries,
-          joinedAt: new Date().toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }),
-          joinedAtMs: Date.now()
-        }
-      ]
+      const pList = matchParticipants[selectedMatch.id] || [];
+      setMatchParticipants({
+        ...matchParticipants,
+        [selectedMatch.id]: [
+          ...pList,
+          {
+            accountName: user.name,
+            accountUid: user.uid,
+            number: user.number,
+            mode: selectedMatch.mode,
+            entryFeePaid: totalFee,
+            players: entries,
+            joinedAt: new Date().toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }),
+            joinedAtMs: Date.now()
+          }
+        ]
+      });
+
+      setShowJoinModal(false);
+      setJoinTeamEntries([{ ign: '', uid: '' }]);
+      showToast('Match e sofolbhabe join korechen!');
+    }).catch((err) => {
+      if (err.message === 'SLOTS_FULL') {
+        showToast('Ei match er slot ekhoni full hoye geche! Taka kata hoyni.');
+      } else if (err.message === 'ALREADY_STARTED') {
+        showToast('Match already start hoye geche! Taka kata hoyni.');
+      } else {
+        showToast('Join korte problem hoyeche, abar try korun.');
+      }
+      setShowJoinModal(false);
     });
-
-    setShowJoinModal(false);
-    setJoinTeamEntries([{ ign: '', uid: '' }]);
-    showToast('Match e sofolbhabe join korechen!');
   };
 
     const handleAddMoneySubmit = () => {
