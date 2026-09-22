@@ -2267,6 +2267,45 @@ ${buildUserContextBrief(uid)}`;
     );
   };
 
+    const parseMatchTime = (timeStr) => {
+    if (!timeStr || timeStr === 'TBA') return null;
+    const match = timeStr.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i) ||
+      timeStr.match(/(\d{2})\/(\d{2})\/(\d{4}),?\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (!match) return null;
+    let year, month, day, hour, minute, ampm;
+    if (match[0].includes('/')) {
+      [, month, day, year, hour, minute, ampm] = match;
+    } else {
+      [, year, month, day, hour, minute, ampm] = match;
+    }
+    hour = parseInt(hour);
+    if (ampm.toUpperCase() === 'PM' && hour !== 12) hour += 12;
+    if (ampm.toUpperCase() === 'AM' && hour === 12) hour = 0;
+    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day), hour, parseInt(minute));
+  };
+
+  const CountdownTimer = ({ timeStr, started }) => {
+    const [remaining, setRemaining] = useState(null);
+    useEffect(() => {
+      const target = parseMatchTime(timeStr);
+      if (!target) { setRemaining(null); return; }
+      const tick = () => {
+        const diff = target.getTime() - Date.now();
+        setRemaining(diff);
+      };
+      tick();
+      const interval = setInterval(tick, 1000);
+      return () => clearInterval(interval);
+    }, [timeStr]);
+
+    if (started) return <span className="text-[11px] font-bold text-red-400">MATCH STARTED</span>;
+    if (remaining === null) return null;
+    if (remaining <= 0) return <span className="text-[11px] font-bold text-red-400">STARTING NOW</span>;
+    const h = Math.floor(remaining / (1000 * 60 * 60));
+    const m = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+    const s = Math.floor((remaining % (1000 * 60)) / 1000);
+    return <span className="text-[11px] font-bold text-amber-400">STARTS IN {String(h).padStart(2, '0')}h {String(m).padStart(2, '0')}m {String(s).padStart(2, '0')}s</span>;
+  };
   const TournamentCard = ({ mt }) => (
     <div
       onClick={() => { setMatchDetailView(mt); setShowTotalPrizeInfo(false); }}
