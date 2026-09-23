@@ -436,20 +436,16 @@ export default function App() {
 
 
   // Match Participants & Results State
-  const [matchParticipants, _setMatchParticipants] = useState({});
-  const setMatchParticipants = (updater) => {
-    _setMatchParticipants(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      Object.keys(next).forEach(matchId => {
-        setDoc(doc(db, 'matchParticipants', matchId), { list: next[matchId] }).catch(e => console.error(e));
-      });
-      return next;
-    });
-  };
-   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'matchParticipants'), (snap) => {
+   const [matchParticipants, _setMatchParticipants] = useState({});
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'joinEntries'), (snap) => {
       const obj = {};
-      snap.docs.forEach(d => { obj[d.id] = d.data().list; });
+      snap.docs.forEach(d => {
+        const data = d.data();
+        if (!data.matchId) return;
+        if (!obj[data.matchId]) obj[data.matchId] = [];
+        obj[data.matchId].push(data);
+      });
       _setMatchParticipants(obj);
     }, (err) => console.error('Participants sync error:', err));
     return () => unsub();
