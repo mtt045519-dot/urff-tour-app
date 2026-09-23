@@ -998,23 +998,18 @@ export default function App() {
 
       setTournaments(prev => prev.map(m => m.id === selectedMatch.id ? { ...m, slotsFilled: m.slotsFilled + playerCount } : m));
 
-      const pList = matchParticipants[selectedMatch.id] || [];
-      setMatchParticipants({
-        ...matchParticipants,
-        [selectedMatch.id]: [
-          ...pList,
-          {
-            accountName: user.name,
-            accountUid: user.uid,
-            number: user.number,
-            mode: selectedMatch.mode,
-            entryFeePaid: totalFee,
-            players: entries,
-            joinedAt: new Date().toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }),
-            joinedAtMs: Date.now()
-          }
-        ]
-      });
+           const newEntryRef = doc(collection(db, 'joinEntries'));
+      setDoc(newEntryRef, {
+        matchId: selectedMatch.id,
+        accountName: user.name,
+        accountUid: user.uid,
+        number: user.number,
+        mode: selectedMatch.mode,
+        entryFeePaid: totalFee,
+        players: entries,
+        joinedAt: new Date().toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }),
+        joinedAtMs: Date.now()
+      }).catch(e => console.error(e));
 
       setShowJoinModal(false);
       setJoinTeamEntries([{ ign: '', uid: '' }]);
