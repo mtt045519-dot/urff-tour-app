@@ -2481,35 +2481,44 @@ ${buildUserContextBrief(uid)}`;
 
   const CountdownTimer = ({ timeStr, started, compact = false, slotsFilled = null, totalSlots = null }) => {
     const [remaining, setRemaining] = useState(null);
+
     useEffect(() => {
       const target = parseMatchTime(timeStr);
       if (!target) { setRemaining(null); return; }
-      const tick = () => setRemaining(target.getTime() - Date.now());
+
+      const tick = () => setRemaining(Math.max(0, target.getTime() - Date.now()));
       tick();
       const interval = setInterval(tick, 1000);
       return () => clearInterval(interval);
     }, [timeStr]);
 
+    const joinedInfo = slotsFilled !== null && totalSlots !== null ? (
+      <div className={`flex items-center justify-center gap-2 ${compact ? 'mt-1.5 text-[9px]' : 'mt-2 text-[10px]'} font-bold`}>
+        <span className="text-emerald-300">{slotsFilled} Joined</span>
+        <span className="text-slate-500">•</span>
+        <span className="text-amber-300">{Math.max(0, totalSlots - slotsFilled)} Slots Left</span>
+      </div>
+    ) : null;
+
     if (started) return (
-      <div className={`w-full ${compact ? 'py-2.5' : 'py-3.5'} rounded-2xl bg-gradient-to-r from-red-600/20 via-orange-500/15 to-red-600/20 border border-red-500/40 shadow-lg shadow-red-950/20`}>
+      <div className={`w-full ${compact ? 'py-2' : 'py-2.5'} rounded-xl bg-gradient-to-r from-red-500/10 via-orange-500/10 to-red-500/10 border border-red-400/30`}>
         <div className="flex items-center justify-center gap-2">
-          <span className="relative flex h-3 w-3"><span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping"/><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"/></span>
-          <span className={`${compact ? 'text-base' : 'text-xl'} font-black tracking-[.12em] text-red-300`}>MATCH LIVE</span>
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-70 animate-ping" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+          </span>
+          <span className={`${compact ? 'text-sm' : 'text-base'} font-black tracking-[.12em] text-red-300`}>MATCH LIVE</span>
         </div>
-        {slotsFilled !== null && totalSlots !== null && (
-          <div className={`mt-1.5 flex items-center justify-center gap-3 ${compact ? 'text-[9px]' : 'text-[10px]'} font-bold`}>
-            <span className="text-emerald-300">{slotsFilled} Joined</span>
-            <span className="text-slate-600">•</span>
-            <span className="text-amber-300">{Math.max(0, totalSlots - slotsFilled)} Slots Left</span>
-          </div>
-        )}
+        {joinedInfo}
       </div>
     );
+
     if (remaining === null) return null;
+
     if (remaining <= 0) return (
-      <div className={`w-full ${compact ? 'py-2.5' : 'py-3.5'} rounded-2xl bg-gradient-to-r from-amber-500/15 to-orange-500/15 border border-amber-400/40 text-center`}>
-        <div className={`${compact ? 'text-sm' : 'text-lg'} font-black text-amber-300`}>STARTING NOW</div>
-        {slotsFilled !== null && totalSlots !== null && <div className={`mt-1 ${compact ? 'text-[9px]' : 'text-[10px]'} font-bold`}><span className="text-emerald-300">{slotsFilled} Joined</span><span className="mx-2 text-slate-600">•</span><span className="text-amber-300">{Math.max(0, totalSlots - slotsFilled)} Slots Left</span></div>}
+      <div className={`w-full ${compact ? 'py-2' : 'py-2.5'} rounded-xl bg-amber-500/10 border border-amber-400/30 text-center`}>
+        <div className={`${compact ? 'text-sm' : 'text-base'} font-black text-amber-300`}>STARTING NOW</div>
+        {joinedInfo}
       </div>
     );
 
@@ -2517,27 +2526,33 @@ ${buildUserContextBrief(uid)}`;
     const h = Math.floor(totalSeconds / 3600);
     const m = Math.floor((totalSeconds % 3600) / 60);
     const sec = totalSeconds % 60;
+
     const unit = (value, label) => (
-      <div className={`flex-1 min-w-0 rounded-2xl bg-slate-950/85 border border-indigo-400/25 ${compact ? 'px-1.5 py-1.5' : 'px-2 py-3 sm:py-4'} shadow-inner shadow-indigo-950/30`}>
-        <div className={`${compact ? 'text-[22px] sm:text-2xl' : 'text-3xl sm:text-4xl'} font-black tabular-nums tracking-tight text-white leading-none`}>{String(value).padStart(2, '0')}</div>
-        <div className={`${compact ? 'text-[7px]' : 'text-[8px] sm:text-[9px]'} mt-1 uppercase tracking-[.16em] text-indigo-300 font-extrabold`}>{label}</div>
+      <div className={`flex-1 rounded-xl bg-slate-950/75 border border-cyan-400/20 ${compact ? 'px-1.5 py-2' : 'px-2 py-2.5 sm:py-3'} shadow-inner`}>
+        <div className={`${compact ? 'text-xl sm:text-2xl' : 'text-2xl sm:text-3xl'} font-black tabular-nums tracking-tight text-white leading-none`}>
+          {String(value).padStart(2, '0')}
+        </div>
+        <div className={`${compact ? 'text-[7px]' : 'text-[8px] sm:text-[9px]'} mt-1 uppercase tracking-[.13em] text-cyan-300/80 font-extrabold`}>
+          {label}
+        </div>
       </div>
     );
+
     return (
-      <div className={`w-full rounded-2xl bg-gradient-to-br from-indigo-600/20 via-violet-600/15 to-cyan-500/15 border border-indigo-400/30 ${compact ? 'p-2' : 'p-3.5 sm:p-4'} shadow-xl shadow-indigo-950/20`}>
+      <div className={`w-full rounded-xl bg-gradient-to-br from-indigo-500/10 via-violet-500/10 to-cyan-500/10 border border-cyan-400/20 ${compact ? 'p-2' : 'p-2.5 sm:p-3'} shadow-lg shadow-indigo-950/10`}>
         <div className="flex items-center justify-center gap-1.5 sm:gap-2">
-          {unit(h, 'Hours')}<span className={`${compact ? 'text-lg' : 'text-2xl sm:text-3xl'} font-black text-cyan-300 -mt-4`}>:</span>
-          {unit(m, 'Minutes')}<span className={`${compact ? 'text-lg' : 'text-2xl sm:text-3xl'} font-black text-cyan-300 -mt-4`}>:</span>
+          {unit(h, 'Hours')}
+          <span className={`${compact ? 'text-base' : 'text-xl sm:text-2xl'} font-black text-cyan-300 -mt-3`}>:</span>
+          {unit(m, 'Minutes')}
+          <span className={`${compact ? 'text-base' : 'text-xl sm:text-2xl'} font-black text-cyan-300 -mt-3`}>:</span>
           {unit(sec, 'Seconds')}
         </div>
-        <div className="flex items-center justify-center gap-1.5 mt-2.5"><span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"/><p className={`${compact ? 'text-[8px]' : 'text-[9px]'} text-slate-400 font-black tracking-[.22em]`}>MATCH STARTS IN</p><span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"/></div>
-        {slotsFilled !== null && totalSlots !== null && (
-          <div className={`mt-2 flex items-center justify-center gap-3 ${compact ? 'text-[9px]' : 'text-[10px]'} font-bold`}>
-            <span className="text-emerald-300">{slotsFilled} Joined</span>
-            <span className="text-slate-600">•</span>
-            <span className="text-amber-300">{Math.max(0, totalSlots - slotsFilled)} Slots Left</span>
-          </div>
-        )}
+        <div className="flex items-center justify-center gap-1.5 mt-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+          <p className={`${compact ? 'text-[8px]' : 'text-[9px]'} text-slate-400 font-black tracking-[.18em]`}>MATCH STARTS IN</p>
+          <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+        </div>
+        {joinedInfo}
       </div>
     );
   };
