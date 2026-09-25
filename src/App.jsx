@@ -179,10 +179,22 @@ export default function App() {
     { image: '', mediaType: 'image', title: '', subtitle: '' },
     { image: '', mediaType: 'image', title: '', subtitle: '' },
   ]);
+  const saveBannersToFirestore = async (nextList) => {
+    // Save the complete banner list as one Firestore document so every client
+    // receives the same state through the onSnapshot listener.
+    await setDoc(doc(db, 'appData', 'banners'), {
+      list: nextList,
+      updatedAt: Date.now(),
+    });
+  };
+
   const setBanners = (updater) => {
     _setBanners(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      setDoc(doc(db, 'appData', 'banners'), { list: next }).catch(e => showToast('Save error: ' + e.message));
+      saveBannersToFirestore(next).catch(e => {
+        console.error('Banner save error:', e);
+        showToast('Banner save failed: ' + (e?.message || 'Unknown error'));
+      });
       return next;
     });
   };
@@ -592,7 +604,15 @@ export default function App() {
     }
   };
 
-  const activeBanners = banners.filter(b => (b.image && b.image.trim()) || (b.title && b.title.trim()));
+  const isVideoBanner = (banner) => {
+    if (!banner?.image) return false;
+    if (banner.mediaType === 'video') return true;
+    // Backward compatibility: older saved banners may have a video URL but
+    // no mediaType field. Detect common video URL/file extensions as fallback.
+    return /\.(mp4|webm|ogg|mov)(?:$|[?#])/i.test(String(banner.image));
+  };
+
+  const activeBanners = banners.filter(b => (b.image && String(b.image).trim()) || (b.title && String(b.title).trim()));
 
   // Auto-rotate the home banners one after another every 4 seconds when there's more than one.
   useEffect(() => {
@@ -1266,21 +1286,33 @@ export default function App() {
   const handleBannerImageUpload = async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
+
     try {
       if (file.type.startsWith('video/')) {
+        // Keep banner videos reasonably small because they are served directly
+        // to every visitor from Firebase Storage.
         if (file.size > 25 * 1024 * 1024) {
           showToast('Video 25MB er moddhe rakhun');
-          e.target.value = '';
           return;
         }
+
         showToast('Banner video upload hocche...');
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-        const fileRef = storageRef(getStorage(), `banners/${Date.now()}_${safeName}`);
-        await uploadBytes(fileRef, file, { contentType: file.type });
-        const url = await getDownloadURL(fileRef);
+        const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`;
+        const fileRef = storageRef(getStorage(), `banners/${uniqueName}`);
+
+        // Upload the actual File with its MIME type, then save only the public
+        // download URL in Firestore. This prevents the video bytes from being
+        // stored inside the Firestore banner document.
+        const snapshot = await uploadBytes(fileRef, file, {
+          contentType: file.type,
+          cacheControl: 'public,max-age=3600',
+        });
+        const url = await getDownloadURL(snapshot.ref);
+
         setBannerImageInput(url);
         setBannerMediaType('video');
-        showToast('Banner video ready. Ekhon SAVE BANNER korun.');
+        showToast('Video upload complete. Ekhon SAVE BANNER korun.');
       } else if (file.type.startsWith('image/')) {
         const result = await compressImage(file, 667, 0.7);
         setBannerImageInput(result);
@@ -1291,7 +1323,8 @@ export default function App() {
       }
     } catch (err) {
       console.error('Banner media upload error:', err);
-      showToast('Banner upload failed: ' + (err.message || 'Unknown error'));
+      const code = err?.code ? ` [${err.code}]` : '';
+      showToast('Banner video upload failed' + code + ': ' + (err?.message || 'Unknown error'));
     } finally {
       e.target.value = '';
     }
@@ -1306,24 +1339,53 @@ export default function App() {
     setBannerMediaType(b.mediaType || 'image');
   };
 
-  const handleSaveBanner = () => {
+  const handleSaveBanner = async () => {
     if (!bannerTitleInput.trim() && !bannerImageInput) {
       showToast('Banner title ba image/video din');
       return;
     }
-    const bannerData = { image: bannerImageInput, mediaType: bannerMediaType, title: bannerTitleInput, subtitle: bannerSubtitleInput };
-    setBanners(prev => prev.map((b, i) => i === editingBannerSlot ? bannerData : b));
-    setShowBanner(true);
-    showToast(`Banner ${editingBannerSlot + 1} update kora hoyeche!`);
+
+    const bannerData = {
+      image: bannerImageInput,
+      mediaType: bannerMediaType,
+      title: bannerTitleInput.trim(),
+      subtitle: bannerSubtitleInput.trim(),
+      updatedAt: Date.now(),
+    };
+
+    const nextList = banners.map((b, i) => i === editingBannerSlot ? bannerData : b);
+
+    try {
+      // Await the Firestore write before telling the admin that the banner is
+      // saved. The onSnapshot listener then pushes this exact list to users.
+      await saveBannersToFirestore(nextList);
+      _setBanners(nextList);
+      setShowBanner(true);
+      showToast(`Banner ${editingBannerSlot + 1} update kora hoyeche!`);
+    } catch (err) {
+      console.error('Save banner error:', err);
+      showToast('Banner save failed: ' + (err?.message || 'Unknown error'));
+    }
   };
 
-  const handleClearBannerSlot = () => {
-    setBanners(prev => prev.map((b, i) => i === editingBannerSlot ? { image: '', mediaType: 'image', title: '', subtitle: '' } : b));
-    setBannerTitleInput('');
-    setBannerSubtitleInput('');
-    setBannerImageInput('');
-    setBannerMediaType('image');
-    showToast(`Banner ${editingBannerSlot + 1} clear kora hoyeche!`);
+  const handleClearBannerSlot = async () => {
+    const nextList = banners.map((b, i) => i === editingBannerSlot
+      ? { image: '', mediaType: 'image', title: '', subtitle: '', updatedAt: Date.now() }
+      : b
+    );
+
+    try {
+      await saveBannersToFirestore(nextList);
+      _setBanners(nextList);
+      setBannerTitleInput('');
+      setBannerSubtitleInput('');
+      setBannerImageInput('');
+      setBannerMediaType('image');
+      showToast(`Banner ${editingBannerSlot + 1} clear kora hoyeche!`);
+    } catch (err) {
+      console.error('Clear banner error:', err);
+      showToast('Banner clear failed: ' + (err?.message || 'Unknown error'));
+    }
   };
 
     const handleLogoImageUpload = (e) => {
@@ -3568,7 +3630,7 @@ ${buildUserContextBrief(uid)}`;
                 </div>
 
                 <div className="rounded-2xl overflow-hidden relative bg-gradient-to-r from-indigo-600 to-violet-600 p-5">
-                  {bannerImageInput && (bannerMediaType === 'video' ? (
+                  {bannerImageInput && (isVideoBanner({ image: bannerImageInput, mediaType: bannerMediaType }) ? (
                     <video src={bannerImageInput} className="absolute inset-0 w-full h-full object-cover" autoPlay muted loop playsInline />
                   ) : (
                     <img src={bannerImageInput} alt="" className="absolute inset-0 w-full h-full object-cover" />
@@ -4083,7 +4145,7 @@ ${buildUserContextBrief(uid)}`;
             const currentBanner = activeBanners[bannerCarouselIndex % activeBanners.length];
             return (
                             <div className="relative rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 p-5 overflow-hidden" style={{ aspectRatio: '667/340' }}>
-                {currentBanner.image && (currentBanner.mediaType === 'video' ? (
+                {currentBanner.image && (isVideoBanner(currentBanner) ? (
                   <video src={currentBanner.image} className="absolute inset-0 w-full h-full object-cover" autoPlay muted loop playsInline onEnded={() => setBannerCarouselIndex(prev => (prev + 1) % activeBanners.length)} />
                 ) : (
                   <img src={currentBanner.image} alt="" className="absolute inset-0 w-full h-full object-cover" />
