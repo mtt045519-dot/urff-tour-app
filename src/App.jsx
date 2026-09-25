@@ -2479,7 +2479,9 @@ ${buildUserContextBrief(uid)}`;
     return new Date(parseInt(year), parseInt(month) - 1, parseInt(day), hour, parseInt(minute));
   };
 
-  const CountdownTimer = ({ timeStr, started, compact = false, slotsFilled = null, totalSlots = null }) => {
+  // Real-time countdown — the target is always calculated from the match start time.
+  // UI intentionally follows the supplied reference: one clean STARTS IN row with HHh MMm SSs.
+  const CountdownTimer = ({ timeStr, started, compact = false }) => {
     const [remaining, setRemaining] = useState(null);
 
     useEffect(() => {
@@ -2492,33 +2494,29 @@ ${buildUserContextBrief(uid)}`;
       return () => clearInterval(interval);
     }, [timeStr]);
 
-    const joinedInfo = slotsFilled !== null && totalSlots !== null ? (
-      <div className={`flex items-center justify-center gap-2 ${compact ? 'mt-1.5 text-[9px]' : 'mt-2 text-[10px]'} font-bold`}>
-        <span className="text-emerald-300">{slotsFilled} Joined</span>
-        <span className="text-slate-500">•</span>
-        <span className="text-amber-300">{Math.max(0, totalSlots - slotsFilled)} Slots Left</span>
-      </div>
-    ) : null;
-
     if (started) return (
-      <div className={`w-full ${compact ? 'py-2' : 'py-2.5'} rounded-xl bg-gradient-to-r from-red-500/10 via-orange-500/10 to-red-500/10 border border-red-400/30`}>
+      <div className={`w-full rounded-xl border border-red-400/25 bg-gradient-to-r from-red-500/10 via-orange-500/10 to-red-500/10 ${compact ? 'px-3 py-2' : 'px-4 py-2.5'}`}>
         <div className="flex items-center justify-center gap-2">
           <span className="relative flex h-2.5 w-2.5">
             <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-70 animate-ping" />
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
           </span>
-          <span className={`${compact ? 'text-sm' : 'text-base'} font-black tracking-[.12em] text-red-300`}>MATCH LIVE</span>
+          <span className={`${compact ? 'text-sm' : 'text-base'} font-black tracking-[.12em] text-red-300`}>MATCH STARTED</span>
         </div>
-        {joinedInfo}
       </div>
     );
 
     if (remaining === null) return null;
 
     if (remaining <= 0) return (
-      <div className={`w-full ${compact ? 'py-2' : 'py-2.5'} rounded-xl bg-amber-500/10 border border-amber-400/30 text-center`}>
-        <div className={`${compact ? 'text-sm' : 'text-base'} font-black text-amber-300`}>STARTING NOW</div>
-        {joinedInfo}
+      <div className={`w-full rounded-xl border border-red-400/25 bg-gradient-to-r from-red-500/10 via-orange-500/10 to-red-500/10 ${compact ? 'px-3 py-2' : 'px-4 py-2.5'}`}>
+        <div className="flex items-center justify-center gap-2">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-70 animate-ping" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+          </span>
+          <span className={`${compact ? 'text-sm' : 'text-base'} font-black tracking-[.12em] text-red-300`}>MATCH STARTED</span>
+        </div>
       </div>
     );
 
@@ -2527,32 +2525,15 @@ ${buildUserContextBrief(uid)}`;
     const m = Math.floor((totalSeconds % 3600) / 60);
     const sec = totalSeconds % 60;
 
-    const unit = (value, label) => (
-      <div className={`flex-1 rounded-xl bg-slate-950/75 border border-cyan-400/20 ${compact ? 'px-1.5 py-2' : 'px-2 py-2.5 sm:py-3'} shadow-inner`}>
-        <div className={`${compact ? 'text-xl sm:text-2xl' : 'text-2xl sm:text-3xl'} font-black tabular-nums tracking-tight text-white leading-none`}>
-          {String(value).padStart(2, '0')}
-        </div>
-        <div className={`${compact ? 'text-[7px]' : 'text-[8px] sm:text-[9px]'} mt-1 uppercase tracking-[.13em] text-cyan-300/80 font-extrabold`}>
-          {label}
-        </div>
-      </div>
-    );
-
     return (
-      <div className={`w-full rounded-xl bg-gradient-to-br from-indigo-500/10 via-violet-500/10 to-cyan-500/10 border border-cyan-400/20 ${compact ? 'p-2' : 'p-2.5 sm:p-3'} shadow-lg shadow-indigo-950/10`}>
+      <div className={`w-full rounded-xl border border-indigo-400/20 bg-gradient-to-r from-indigo-950/70 via-slate-950/80 to-violet-950/60 ${compact ? 'px-3 py-2.5' : 'px-4 py-3'} shadow-[0_0_18px_rgba(59,130,246,.10)]`}>
         <div className="flex items-center justify-center gap-1.5 sm:gap-2">
-          {unit(h, 'Hours')}
-          <span className={`${compact ? 'text-base' : 'text-xl sm:text-2xl'} font-black text-cyan-300 -mt-3`}>:</span>
-          {unit(m, 'Minutes')}
-          <span className={`${compact ? 'text-base' : 'text-xl sm:text-2xl'} font-black text-cyan-300 -mt-3`}>:</span>
-          {unit(sec, 'Seconds')}
+          <Clock className={`${compact ? 'w-4 h-4' : 'w-5 h-5'} text-blue-400`} />
+          <span className={`${compact ? 'text-[10px]' : 'text-xs'} font-black tracking-[.16em] text-slate-300 uppercase`}>Starts In</span>
+          <span className={`${compact ? 'text-lg' : 'text-xl sm:text-2xl'} font-black tabular-nums tracking-tight text-blue-400`}>{String(h).padStart(2, '0')}h</span>
+          <span className={`${compact ? 'text-lg' : 'text-xl sm:text-2xl'} font-black tabular-nums tracking-tight text-cyan-300`}>{String(m).padStart(2, '0')}m</span>
+          <span className={`${compact ? 'text-lg' : 'text-xl sm:text-2xl'} font-black tabular-nums tracking-tight text-orange-400`}>{String(sec).padStart(2, '0')}s</span>
         </div>
-        <div className="flex items-center justify-center gap-1.5 mt-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-          <p className={`${compact ? 'text-[8px]' : 'text-[9px]'} text-slate-400 font-black tracking-[.18em]`}>MATCH STARTS IN</p>
-          <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-        </div>
-        {joinedInfo}
       </div>
     );
   };
@@ -2599,14 +2580,20 @@ ${buildUserContextBrief(uid)}`;
         </div>
       </div>
       <div className="text-center">
-        <CountdownTimer timeStr={mt.time} started={mt.started} slotsFilled={mt.slotsFilled} totalSlots={mt.totalSlots} />
+        <CountdownTimer timeStr={mt.time} started={mt.started} />
       </div>
 
-      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-        <div
-          className="h-full bg-gradient-to-r from-indigo-500 to-violet-500"
-          style={{ width: `${Math.min(100, (mt.slotsFilled / mt.totalSlots) * 100)}%` }}
-        />
+      <div className="space-y-1.5">
+        <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-violet-500"
+            style={{ width: `${Math.min(100, (mt.slotsFilled / mt.totalSlots) * 100)}%` }}
+          />
+        </div>
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-slate-400">Only <span className="text-amber-300 font-black">{Math.max(0, mt.totalSlots - mt.slotsFilled)}</span> spots left</span>
+          <span className="text-slate-500 font-semibold">{mt.slotsFilled}/{mt.totalSlots} joined</span>
+        </div>
       </div>
 
       {isJoinedByMe(mt.id) && (
@@ -2659,7 +2646,7 @@ ${buildUserContextBrief(uid)}`;
                    <div className={`${t.card} border ${t.border} rounded-xl p-4 space-y-1`}>
             <p className="text-xs font-bold text-slate-400">Match Time</p>
             <p className="text-base font-bold">{mt.time}</p>
-            <CountdownTimer timeStr={mt.time} started={mt.started} slotsFilled={mt.slotsFilled} totalSlots={mt.totalSlots} />
+            <CountdownTimer timeStr={mt.time} started={mt.started} />
           </div>
 
           <div className={`${t.card} border ${t.border} rounded-xl p-4 space-y-1`}>
@@ -4338,7 +4325,11 @@ ${buildUserContextBrief(uid)}`;
                       </div>
                       <StatusBadge status={mt.status} />
                     </div>
-                    <CountdownTimer timeStr={mt.time} started={mt.started} compact slotsFilled={mt.slotsFilled} totalSlots={mt.totalSlots} />
+                    <div className="flex items-center justify-between px-1 text-[10px]">
+                      <span className="text-slate-400">Only <span className="text-amber-300 font-black">{Math.max(0, mt.totalSlots - mt.slotsFilled)}</span> spots left</span>
+                      <span className="text-slate-500 font-semibold">{mt.slotsFilled}/{mt.totalSlots} joined</span>
+                    </div>
+                    <CountdownTimer timeStr={mt.time} started={mt.started} compact />
                     {isJoinedByMe(mt.id) && mt.roomInfo && mt.roomInfo.pass && (
                       <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} border border-indigo-500/20 rounded-lg px-3 py-2 flex items-center justify-between`}>
                         <span className="flex items-center gap-1.5 text-[10px] text-slate-500"><Lock className="w-3 h-3 text-indigo-400" />Room Password</span>
