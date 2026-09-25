@@ -935,21 +935,28 @@ export default function App() {
   }, [registeredUsers, user.uid, activeTab]);
 
   const handleCheckIn = () => {
-    if (checkedInToday) {
-      showToast('Ajke apni already check-in korechen!');
+    const hoursSince = (Date.now() - lastCheckInMs) / (1000 * 60 * 60);
+    if (hoursSince < 24) {
+      showToast('Ajke apni already check-in korechen! 24 ghonta por abar asun.');
+      setShowCheckInModal(false);
       return;
     }
-    const bonusAvailable = checkInBonusDays < CHECKIN_BONUS_LIMIT;
-    if (bonusAvailable) {
-      const reward = CHECKIN_DAILY_REWARD;
-      applyBalanceChange(user.uid, { winning: reward });
-      setCheckInBonusDays(prev => prev + 1);
-      showToast(`+৳${reward} check-in bonus পেয়েছেন!`);
-    } else {
-      showToast(`Apni maximum ${CHECKIN_BONUS_LIMIT} diner check-in bonus peye gechen. Ar bonus paben na.`);
+    if (checkInBonusDays >= CHECKIN_BONUS_LIMIT) {
+      showToast(`Apni maximum ${CHECKIN_BONUS_LIMIT} diner check-in bonus already peye gechen.`);
+      setShowCheckInModal(false);
+      return;
     }
+    const reward = CHECKIN_DAILY_REWARD;
+    applyBalanceChange(user.uid, { winning: reward });
+    const newBonusDays = checkInBonusDays + 1;
+    const newStreak = checkInStreak + 1;
+    const nowMs = Date.now();
+    setCheckInBonusDays(newBonusDays);
+    setCheckInStreak(newStreak);
+    setLastCheckInMs(nowMs);
     setCheckedInToday(true);
-    setCheckInStreak(prev => prev + 1);
+    setDoc(doc(db, 'checkins', user.uid), { bonusDays: newBonusDays, streak: newStreak, lastCheckInMs: nowMs }).catch(e => console.error(e));
+    showToast(`+৳${reward} check-in bonus পেয়েছেন!`);
     setShowCheckInModal(false);
   };
 
