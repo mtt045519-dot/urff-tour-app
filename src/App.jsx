@@ -12,13 +12,36 @@ const LOGO_URL = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBAU
 export default function App() {
   // Navigation & Auth States
   const [activeTab, setActiveTab] = useState('login');
-  
+  const [hasActiveSession, setHasActiveSession] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const [banScreenData, setBanScreenData] = useState(null);
+
+  useEffect(() => {
+    let finished = false;
+    let fallbackTimer;
+    const finishSplash = () => {
+      if (finished) return;
+      finished = true;
+      window.setTimeout(() => setShowSplash(false), 700);
+    };
+    if (document.readyState === 'complete') finishSplash();
+    else {
+      window.addEventListener('load', finishSplash, { once: true });
+      fallbackTimer = window.setTimeout(finishSplash, 1800);
+    }
+    return () => {
+      window.removeEventListener('load', finishSplash);
+      if (fallbackTimer) window.clearTimeout(fallbackTimer);
+    };
+  }, []);
+
   useEffect(() => {
     const savedSession = localStorage.getItem('urff_session');
     if (savedSession) {
       try {
         const parsed = JSON.parse(savedSession);
         setUser(parsed);
+        setHasActiveSession(true);
         setActiveTab('home');
       } catch (e) {
         localStorage.removeItem('urff_session');
@@ -297,14 +320,14 @@ export default function App() {
       return next;
     });
   };
+  // Real-time support chat sync for BOTH user and admin panels.
   useEffect(() => {
-    getDocs(collection(db, 'supportChats')).then(snap => {
-      if (!snap.empty) {
-        const obj = {};
-        snap.docs.forEach(d => { obj[d.id] = d.data(); });
-        _setSupportChats(obj);
-      }
-    }).catch(e => console.error(e));
+    const unsub = onSnapshot(collection(db, 'supportChats'), (snap) => {
+      const obj = {};
+      snap.docs.forEach(d => { obj[d.id] = d.data(); });
+      _setSupportChats(obj);
+    }, (err) => console.error('Support chat sync error:', err));
+    return () => unsub();
   }, []);
   const [supportChatInput, setSupportChatInput] = useState('');
   const [supportChatLoading, setSupportChatLoading] = useState(false);
@@ -644,6 +667,15 @@ export default function App() {
   }, []);
   const [automatedTemplates, setAutomatedTemplates] = useState([]);
 
+  // Daily automation templates are stored in Firestore so the next-day clone still
+  // happens after refresh, on another device, or after the browser was closed.
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'automatedTemplates'), (snap) => {
+      setAutomatedTemplates(snap.docs.map(d => d.data()));
+    }, (err) => console.error('Automation sync error:', err));
+    return () => unsub();
+  }, []);
+
   const [tournaments, setTournaments] = useState([
     {
       id: 'm1',
@@ -729,23 +761,28 @@ export default function App() {
     return () => unsub();
   }, []);
  
-  // Auto-generate today's matches from any "Command to Automated" templates. Runs on load
-  // and then rechecks periodically, so it also catches the day rolling over while the app
-  // stays open. Note: this only fires while the app is actually open — it's a client-only
-  // simulation, not a real background/server cron job.
+  // Clone an automated match for the current day. The clone has ZERO participants,
+  // a fresh slot count, and a deterministic ID prevents duplicate daily matches.
   useEffect(() => {
-    const generateDueMatches = () => {
-      const todayStr = new Date().toDateString();
-      setAutomatedTemplates(prevTemplates => {
-        const dueTemplates = prevTemplates.filter(tpl => tpl.lastGeneratedDate !== todayStr);
-        if (dueTemplates.length === 0) return prevTemplates;
+    if (!automatedTemplates.length) return;
 
-        const newMatches = dueTemplates.map(tpl => ({
-          id: 'm_auto_' + Date.now() + Math.random().toString(36).slice(2),
+    const generateDueMatches = async () => {
+      const now = new Date();
+      const dateKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const dateLabel = dateKey;
+
+      for (const tpl of automatedTemplates) {
+        if (tpl.lastGeneratedDate === dateKey) continue;
+
+        const matchId = `m_auto_${tpl.id}_${dateKey}`;
+        const newMatch = {
+          id: matchId,
+          templateId: tpl.id,
+          generatedDate: dateKey,
           category: tpl.category,
           categoryId: tpl.categoryId,
           title: tpl.title,
-          time: `${new Date().toLocaleDateString('en-CA')} ${tpl.timeLabel}`,
+          time: `${dateLabel} ${tpl.timeLabel}`,
           prizePool: tpl.prizePool,
           perKill: tpl.perKill,
           entryFee: tpl.entryFee,
@@ -759,17 +796,21 @@ export default function App() {
           rules: tpl.rules,
           roomInfo: { id: '', pass: '' },
           prizeTable: tpl.prizeTable || [],
-        }));
+        };
 
-        setTournaments(prevTournaments => [...newMatches, ...prevTournaments]);
-        return prevTemplates.map(tpl => dueTemplates.find(d => d.id === tpl.id) ? { ...tpl, lastGeneratedDate: todayStr } : tpl);
-      });
+        try {
+          await setDoc(doc(db, 'tournaments', matchId), newMatch, { merge: false });
+          await setDoc(doc(db, 'automatedTemplates', tpl.id), { ...tpl, lastGeneratedDate: dateKey }, { merge: true });
+        } catch (e) {
+          console.error('Daily match clone error:', e);
+        }
+      }
     };
 
     generateDueMatches();
-    const interval = setInterval(generateDueMatches, 5 * 60 * 1000);
+    const interval = setInterval(generateDueMatches, 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [automatedTemplates]);
 
   const [shopItems, setShopItems] = useState([
     { id: 'd1', title: '200 Free Fire Like', type: 'like', price: 20, oldPrice: 50, discount: '-60%', image: '🔥' },
@@ -864,6 +905,7 @@ export default function App() {
       totalWithdrawn: 0.00
     };
     setUser(newLoggedInUser);
+    setHasActiveSession(true);
     localStorage.setItem('urff_session', JSON.stringify(newLoggedInUser));
 
     const refCode = regReferralCode.trim();
@@ -903,6 +945,7 @@ export default function App() {
         totalWithdrawn: found.totalWithdrawn || 0
       };
       setUser(loggedInUser);
+      setHasActiveSession(true);
       localStorage.setItem('urff_session', JSON.stringify(loggedInUser));
       showToast('Login successful!');
       setActiveTab('home');
@@ -920,19 +963,25 @@ export default function App() {
     showToast('Logout successful!');
   };
 
-  // Force-logout immediately if the currently logged-in account gets banned mid-session.
+  // Force-logout immediately when the current account is banned and show a dedicated
+  // full-screen ban notice. The ban data comes from Firestore's live users snapshot.
   useEffect(() => {
-    if (activeTab === 'login' || activeTab === 'register') return;
+    if (!hasActiveSession) return;
     const me = registeredUsers.find(u => u.uid === user.uid);
     if (!me) return;
     const now = Date.now();
-    if (me.banUntil === 'permanent' || (typeof me.banUntil === 'number' && me.banUntil > now)) {
-      showToast('Apnar account ban kora hoyeche. Logout kora hocche.');
+    const banned = me.banUntil === 'permanent' || (typeof me.banUntil === 'number' && me.banUntil > now);
+    if (banned) {
+      setBanScreenData({ banUntil: me.banUntil, banReason: me.banReason || 'Rules violation' });
+      localStorage.removeItem('urff_session');
+      setHasActiveSession(false);
       setActiveTab('login');
       setLoginNumber('');
       setLoginPassword('');
+    } else if (banScreenData) {
+      setBanScreenData(null);
     }
-  }, [registeredUsers, user.uid, activeTab]);
+  }, [registeredUsers, user.uid, activeTab, hasActiveSession]);
 
   const handleCheckIn = () => {
     const hoursSince = (Date.now() - lastCheckInMs) / (1000 * 60 * 60);
@@ -1545,14 +1594,21 @@ export default function App() {
       image: mt.image,
       rules: mt.rules,
       timeLabel,
-      lastGeneratedDate: new Date().toDateString(), // today's real one already exists, so start counting from tomorrow
+      lastGeneratedDate: (() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      })(), // today's real one already exists, so start counting from tomorrow
     };
     setAutomatedTemplates(prev => [...prev, template]);
+    setDoc(doc(db, 'automatedTemplates', template.id), template, { merge: true })
+      .catch(e => console.error('Failed to save automation:', e));
     showToast(`"${mt.title}" ekhon protidin ${timeLabel}-e automatic add hobe!`);
   };
 
   const handleRemoveTemplate = (templateId) => {
     setAutomatedTemplates(prev => prev.filter(tpl => tpl.id !== templateId));
+    deleteDoc(doc(db, 'automatedTemplates', templateId))
+      .catch(e => console.error('Failed to remove automation:', e));
     showToast('Daily automation theke sriye deya hoyeche.');
   };
 
@@ -1860,7 +1916,7 @@ ${buildUserContextBrief(uid)}`;
   const startVoiceRecording = async (forAdmin) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
+      const recorder = new MediaRecorder(stream, { audioBitsPerSecond: 32000 });
       audioChunksRef.current = [];
       let liveTranscript = '';
 
@@ -1886,22 +1942,32 @@ ${buildUserContextBrief(uid)}`;
         if (speechRecognitionRef.current) {
           try { speechRecognitionRef.current.stop(); } catch (e) {}
         }
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const audioUrl = URL.createObjectURL(blob);
-        const transcript = liveTranscript.trim();
-        const message = { sender: forAdmin ? 'admin' : 'user', type: 'voice', audioUrl, transcript, text: transcript, time: 'Just now' };
-        if (forAdmin && adminSupportSelectedUid) {
-          const uid = adminSupportSelectedUid;
-          const existing = supportChats[uid] || { messages: [], aiEnabled: true };
-          setSupportChats(prev => ({ ...prev, [uid]: { ...existing, messages: [...existing.messages, message] } }));
-          setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Admin Replied', message: 'Apnar "Ask Your Problem" chat e admin ekta voice message pathiyeche.', time: 'Just now', targetUid: uid }, ...prev]);
-        } else if (!forAdmin) {
-          appendUserChatMessage(user.uid, message, true);
-        }
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const audioUrl = reader.result;
+          const transcript = liveTranscript.trim();
+          const message = { sender: forAdmin ? 'admin' : 'user', type: 'voice', audioUrl, transcript, text: transcript, time: 'Just now' };
+          if (forAdmin && adminSupportSelectedUid) {
+            const uid = adminSupportSelectedUid;
+            const existing = supportChats[uid] || { messages: [], aiEnabled: true };
+            setSupportChats(prev => ({ ...prev, [uid]: { ...existing, messages: [...existing.messages, message] } }));
+            setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Admin Replied', message: 'Apnar "Ask Your Problem" chat e admin ekta voice message pathiyeche.', time: 'Just now', targetUid: uid }, ...prev]);
+          } else if (!forAdmin) {
+            appendUserChatMessage(user.uid, message, true);
+          }
+        };
+        reader.readAsDataURL(blob);
       };
       mediaRecorderRef.current = recorder;
       recorder.start();
       if (forAdmin) setIsRecordingVoiceAdmin(true); else setIsRecordingVoice(true);
+      window.setTimeout(() => {
+        if (mediaRecorderRef.current === recorder && recorder.state !== 'inactive') {
+          stopVoiceRecording(forAdmin);
+          showToast('Voice note 30 second-e limit kora hoyeche.');
+        }
+      }, 30000);
     } catch (err) {
       showToast('Microphone access pawa jayni. Browser permission check korun.');
     }
@@ -1937,13 +2003,21 @@ ${buildUserContextBrief(uid)}`;
   // ---------- Admin: Player Database & Ban Controls ----------
   const handleBanUser = (uid, durationDays) => {
     const banUntil = durationDays === 'permanent' ? 'permanent' : Date.now() + durationDays * 24 * 60 * 60 * 1000;
-    setRegisteredUsers(prev => prev.map(u => u.uid === uid ? { ...u, banUntil, banReason: adminBanReason.trim() || 'Rules violation' } : u));
+    const banReason = adminBanReason.trim() || 'Rules violation';
+    const foundUser = registeredUsers.find(u => u.uid === uid);
+    const nextUser = foundUser ? { ...foundUser, banUntil, banReason } : null;
+
+    setRegisteredUsers(prev => prev.map(u => u.uid === uid ? { ...u, banUntil, banReason } : u));
+    if (nextUser) {
+      setDoc(doc(db, 'users', uid), nextUser, { merge: true })
+        .catch(e => console.error('Failed to persist ban:', e));
+    }
     setUserNotifications(prev => [{
       id: 'not_' + Date.now(),
       title: 'Account Banned',
       message: durationDays === 'permanent'
-        ? `Apnar account permanently ban kora hoyeche.${adminBanReason.trim() ? ' Karon: ' + adminBanReason.trim() : ''}`
-        : `Apnar account ${durationDays} diner jonno ban kora hoyeche.${adminBanReason.trim() ? ' Karon: ' + adminBanReason.trim() : ''}`,
+        ? `Apnar account permanently ban kora hoyeche. Karon: ${banReason}`
+        : `Apnar account ${durationDays} diner jonno ban kora hoyeche. Karon: ${banReason}`,
       time: 'Just now',
       targetUid: uid
     }, ...prev]);
@@ -1953,6 +2027,8 @@ ${buildUserContextBrief(uid)}`;
 
   const handleUnbanUser = (uid) => {
     setRegisteredUsers(prev => prev.map(u => u.uid === uid ? { ...u, banUntil: null, banReason: '' } : u));
+    updateDoc(doc(db, 'users', uid), { banUntil: null, banReason: '' })
+      .catch(e => console.error('Failed to persist unban:', e));
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Account Unbanned', message: 'Apnar account abar active kora hoyeche.', time: 'Just now', targetUid: uid }, ...prev]);
     showToast('User unban kora hoyeche!');
   };
@@ -2107,6 +2183,75 @@ ${buildUserContextBrief(uid)}`;
     : { bg: 'bg-slate-50', card: 'bg-white', border: 'border-slate-200', text: 'text-slate-900', sub: 'text-slate-500', input: 'bg-slate-50 border-slate-200' };
 
   const isImageUrl = (val) => typeof val === 'string' && (val.startsWith('data:image') || val.startsWith('http'));
+
+  // ---------- POLISHED SPLASH / BAN SCREENS ----------
+  if (showSplash) {
+    return (
+      <div className="fixed inset-0 z-[100] overflow-hidden bg-slate-950 text-white flex items-center justify-center">
+        <style>{`
+          @keyframes urffLogoIn {
+            0% { opacity: 0; transform: scale(.72) rotate(-8deg); filter: blur(12px); }
+            55% { opacity: 1; transform: scale(1.06) rotate(2deg); filter: blur(0); }
+            100% { opacity: 1; transform: scale(1) rotate(0); filter: blur(0); }
+          }
+          @keyframes urffGlow {
+            0%,100% { transform: scale(.88); opacity: .25; }
+            50% { transform: scale(1.18); opacity: .6; }
+          }
+          @keyframes urffShine {
+            0% { transform: translateX(-140%) skewX(-18deg); }
+            70%,100% { transform: translateX(160%) skewX(-18deg); }
+          }
+          @keyframes urffTextIn {
+            0% { opacity: 0; transform: translateY(14px); }
+            100% { opacity: 1; transform: translateY(0); }
+          }
+          .urff-logo-in { animation: urffLogoIn 1.05s cubic-bezier(.16,1,.3,1) both; }
+          .urff-glow { animation: urffGlow 1.8s ease-in-out infinite; }
+          .urff-text-in { animation: urffTextIn .65s .55s ease-out both; }
+          .urff-shine { animation: urffShine 1.4s .7s ease-in-out both; }
+        `}</style>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(79,70,229,.22),transparent_45%)]" />
+        <div className="relative flex flex-col items-center">
+          <div className="absolute w-52 h-52 rounded-full bg-indigo-500/30 blur-3xl urff-glow" />
+          <div className="relative w-32 h-32 sm:w-40 sm:h-40 rounded-[2rem] overflow-hidden border border-indigo-300/30 shadow-2xl shadow-indigo-500/30 urff-logo-in">
+            <img src={logoUrl} alt="UR FF TOUR" className="w-full h-full object-cover" />
+            <div className="absolute inset-y-0 -left-1/2 w-1/3 bg-white/30 blur-md urff-shine" />
+          </div>
+          <div className="text-center mt-6 urff-text-in">
+            <h1 className="text-2xl sm:text-3xl font-black tracking-[.18em] bg-gradient-to-r from-indigo-300 via-white to-cyan-300 bg-clip-text text-transparent">UR FF TOUR</h1>
+            <p className="text-[10px] sm:text-xs text-slate-400 mt-2 tracking-[.3em] uppercase">Tournament • Community • Glory</p>
+            <div className="mt-5 flex items-center justify-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" />
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce [animation-delay:120ms]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce [animation-delay:240ms]" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (banScreenData) {
+    const permanent = banScreenData.banUntil === 'permanent';
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-5 font-sans">
+        <div className="w-full max-w-sm rounded-3xl border border-red-500/30 bg-slate-900 p-7 text-center shadow-2xl shadow-red-950/30">
+          <div className="mx-auto w-20 h-20 rounded-3xl bg-red-500/10 border border-red-500/30 flex items-center justify-center mb-5 animate-pulse">
+            <Ban className="w-9 h-9 text-red-400" />
+          </div>
+          <h1 className="text-2xl font-black text-red-400">ACCOUNT BANNED</h1>
+          <p className="text-sm text-slate-300 mt-2">Apnar account theke apnake ber kore deya hoyeche.</p>
+          <div className="mt-5 rounded-2xl bg-slate-950 border border-slate-800 p-4 text-left space-y-2">
+            <div className="flex justify-between gap-4 text-xs"><span className="text-slate-500">Status</span><span className="font-bold text-red-400">{permanent ? 'Permanent' : 'Temporary'}</span></div>
+            {!permanent && <div className="flex justify-between gap-4 text-xs"><span className="text-slate-500">Until</span><span className="font-semibold text-right">{new Date(banScreenData.banUntil).toLocaleString()}</span></div>}
+            <div className="text-xs"><span className="text-slate-500">Reason</span><p className="mt-1 text-slate-200">{banScreenData.banReason}</p></div>
+          </div>
+          <button onClick={() => setBanScreenData(null)} className="mt-5 w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold">BACK TO LOGIN</button>
+        </div>
+      </div>
+    );
+  }
 
   // ---------- AUTH SCREENS ----------
   if (activeTab === 'login' || activeTab === 'register') {
@@ -2303,22 +2448,47 @@ ${buildUserContextBrief(uid)}`;
     useEffect(() => {
       const target = parseMatchTime(timeStr);
       if (!target) { setRemaining(null); return; }
-      const tick = () => {
-        const diff = target.getTime() - Date.now();
-        setRemaining(diff);
-      };
+      const tick = () => setRemaining(target.getTime() - Date.now());
       tick();
       const interval = setInterval(tick, 1000);
       return () => clearInterval(interval);
     }, [timeStr]);
 
-    if (started) return <span className="text-[11px] font-bold text-red-400">MATCH STARTED</span>;
+    if (started) {
+      return (
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-red-500/10 border border-red-500/30">
+          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+          <span className="text-sm font-black text-red-400 tracking-wide">MATCH LIVE</span>
+        </div>
+      );
+    }
     if (remaining === null) return null;
-    if (remaining <= 0) return <span className="text-[11px] font-bold text-red-400">STARTING NOW</span>;
-    const h = Math.floor(remaining / (1000 * 60 * 60));
-    const m = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
-    const s = Math.floor((remaining % (1000 * 60)) / 1000);
-    return <span className="text-[11px] font-bold text-amber-400">STARTS IN {String(h).padStart(2, '0')}h {String(m).padStart(2, '0')}m {String(s).padStart(2, '0')}s</span>;
+    if (remaining <= 0) {
+      return <div className="inline-flex items-center px-4 py-2 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-sm font-black text-amber-400">STARTING NOW</div>;
+    }
+
+    const totalSeconds = Math.floor(remaining / 1000);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const sec = totalSeconds % 60;
+    const unit = (value, label) => (
+      <div className="min-w-[58px] rounded-2xl bg-slate-950/90 border border-indigo-500/20 px-2.5 py-2 text-center shadow-lg shadow-indigo-950/20">
+        <div className="text-2xl sm:text-3xl font-black tabular-nums tracking-tight text-white">{String(value).padStart(2, '0')}</div>
+        <div className="text-[8px] uppercase tracking-[0.18em] text-indigo-300 font-bold">{label}</div>
+      </div>
+    );
+    return (
+      <div className="w-full rounded-2xl bg-gradient-to-br from-indigo-600/15 via-violet-600/10 to-cyan-500/10 border border-indigo-500/25 p-3">
+        <div className="flex items-center justify-center gap-1.5 sm:gap-2">
+          {unit(h, 'Hours')}
+          <span className="text-xl font-black text-indigo-300 -mt-3">:</span>
+          {unit(m, 'Minutes')}
+          <span className="text-xl font-black text-indigo-300 -mt-3">:</span>
+          {unit(sec, 'Seconds')}
+        </div>
+        <p className="text-[9px] text-center text-slate-500 mt-2 font-semibold tracking-wide">MATCH STARTS IN</p>
+      </div>
+    );
   };
   const TournamentCard = ({ mt }) => (
     <div
@@ -4097,6 +4267,7 @@ ${buildUserContextBrief(uid)}`;
                       </div>
                       <StatusBadge status={mt.status} />
                     </div>
+                    {!myEntry && <CountdownTimer timeStr={mt.time} started={mt.started} />}
                     {myEntry ? (
                       <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-lg p-2 grid grid-cols-3 gap-1 text-center`}>
                         <div><p className="text-[9px] text-slate-500">Rank</p><p className="text-xs font-bold text-amber-400">#{myEntry.rank}</p></div>
@@ -4972,7 +5143,7 @@ ${buildUserContextBrief(uid)}`;
                           </div>
                           <p className="text-xs font-bold">Cash on Delivery</p>
                           <p className="text-[9px] text-slate-500">Delivery te cash pay</p>
-                          <p className="text-[9px] text-amber-400 mt-0.5">Delivery appSettings.codCharge} instant katbe</p>
+                          <p className="text-[9px] text-amber-400 mt-0.5">Delivery ৳{appSettings.codCharge} instant katbe</p>
                         </button>
                       </div>
                     </div>
@@ -4999,7 +5170,7 @@ ${buildUserContextBrief(uid)}`;
                   {isDiamond
                     ? `Order confirm korle apnar balance theke ৳${selectedProduct.price} ekhoni kete newa hobe. Order reject hole taka ferot ashbe.`
                     : isCOD
-                      ? `Cash on Delivery-r jonno delivery charge appSettings.codCharge} ekhoni advance hishebe kete newa hobe. Baki ৳${subtotal} product hate paile cash e dite hobe. Order reject hole advance ferot ashbe.`
+                      ? `Cash on Delivery-r jonno delivery charge ৳${appSettings.codCharge} ekhoni advance hishebe kete newa hobe. Baki ৳${subtotal} product hate paile cash e dite hobe. Order reject hole advance ferot ashbe.`
                       : `Order confirm korle apnar balance theke full ৳${subtotal} ekhoni kete newa hobe. Order reject hole taka ferot ashbe.`}
                 </p>
 
