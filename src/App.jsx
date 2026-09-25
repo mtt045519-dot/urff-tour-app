@@ -225,9 +225,25 @@ export default function App() {
   }, []);
   const [iconUploadTarget, setIconUploadTarget] = useState(null);
   const [showCheckInModal, setShowCheckInModal] = useState(false);
-  const [checkedInToday, setCheckedInToday] = useState(false);
-  const [checkInStreak, setCheckInStreak] = useState(3);
+   const [checkedInToday, setCheckedInToday] = useState(false);
+  const [checkInStreak, setCheckInStreak] = useState(0);
   const [checkInBonusDays, setCheckInBonusDays] = useState(0); // lifetime bonus days used (max 4)
+  const [lastCheckInMs, setLastCheckInMs] = useState(0);
+
+  useEffect(() => {
+    if (!user.uid) return;
+    getDocs(collection(db, 'checkins')).then(snap => {
+      const doc1 = snap.docs.find(d => d.id === user.uid);
+      if (doc1) {
+        const data = doc1.data();
+        setCheckInBonusDays(data.bonusDays || 0);
+        setCheckInStreak(data.streak || 0);
+        setLastCheckInMs(data.lastCheckInMs || 0);
+        const hoursSince = (Date.now() - (data.lastCheckInMs || 0)) / (1000 * 60 * 60);
+        setCheckedInToday(hoursSince < 24);
+      }
+    }).catch(e => console.error(e));
+  }, [user.uid]);
   const CHECKIN_DAILY_REWARD = 2;
   const CHECKIN_BONUS_LIMIT = 4;
   const [toastMessage, setToastMessage] = useState(null);
