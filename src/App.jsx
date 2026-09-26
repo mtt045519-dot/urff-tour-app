@@ -380,6 +380,11 @@ export default function App() {
   const [adminTab, setAdminTab] = useState('tournaments');
   const [expandedMatchId, setExpandedMatchId] = useState(null);
     const [adminPlayersCategoryView, setAdminPlayersCategoryView] = useState(null);
+  const [roomIdCategoryView, setRoomIdCategoryView] = useState(null);
+  const [roomIdMatchView, setRoomIdMatchView] = useState(null);
+  const [roomIdInput, setRoomIdInput] = useState('');
+  const [roomPasswordInput, setRoomPasswordInput] = useState('');
+  const [roomInfoSaving, setRoomInfoSaving] = useState(false);
     const [isSettingsUnlocked, setIsSettingsUnlocked] = useState(false);
   const [settingsPasswordInput, setSettingsPasswordInput] = useState('');
   const SETTINGS_PASSWORD = 'jjiihhaadd';
@@ -1671,6 +1676,33 @@ export default function App() {
     } catch (e) {
       console.error('Match start/reschedule error:', e);
       showToast('Match update/reschedule korte problem hoyeche.');
+    }
+  };
+
+  const openRoomIdMatch = (mt) => {
+    setRoomIdMatchView(mt.id);
+    setRoomIdInput(mt.roomInfo?.id || '');
+    setRoomPasswordInput(mt.roomInfo?.pass || '');
+  };
+
+  const handleConfirmRoomInfo = async (mt) => {
+    const roomId = roomIdInput.trim();
+    const roomPass = roomPasswordInput.trim();
+    if (!roomId || !roomPass) {
+      showToast('Room ID ebong Password duita-i din.');
+      return;
+    }
+    setRoomInfoSaving(true);
+    const updated = { ...mt, roomInfo: { id: roomId, pass: roomPass }, roomInfoPublished: true, roomInfoUpdatedAt: Date.now() };
+    try {
+      await setDoc(doc(db, 'tournaments', mt.id), updated, { merge: true });
+      setTournaments(prev => prev.map(m => m.id === mt.id ? updated : m));
+      showToast('Room ID + Password confirm hoye geche. Joined users ekhon dekhte parbe.');
+    } catch (e) {
+      console.error('Room info save error:', e);
+      showToast('Room ID save korte problem hoyeche. Abar try korun.');
+    } finally {
+      setRoomInfoSaving(false);
     }
   };
 
@@ -3013,6 +3045,7 @@ ${buildUserContextBrief(uid)}`;
       { id: 'automation', label: 'Automation', icon: Bot },
       { id: 'shop', label: 'Shop', icon: ShoppingBag },
       { id: 'banner', label: 'Banner', icon: ImageIcon },
+      { id: 'roomids', label: 'Room ID Set', icon: Lock },
       { id: 'deposits', label: 'Deposits', icon: Plus },
       { id: 'withdrawals', label: 'Withdraws', icon: Minus },
       { id: 'orders', label: 'Orders', icon: ShoppingBag },
@@ -3215,6 +3248,90 @@ ${buildUserContextBrief(uid)}`;
               </div>
             </>
           )}
+
+                    {adminTab === 'roomids' && (() => {
+            const selectedCategory = matchCategories.find(c => c.id === roomIdCategoryView);
+            const selectedMatch = tournaments.find(m => m.id === roomIdMatchView);
+            const categoryMatches = roomIdCategoryView ? tournaments.filter(mt => mt.categoryId === roomIdCategoryView) : [];
+            const participants = selectedMatch ? (matchParticipants[selectedMatch.id] || []) : [];
+
+            if (!roomIdCategoryView) {
+              return (
+                <div className="space-y-2">
+                  <div className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-1`}>
+                    <p className="text-sm font-black flex items-center gap-2"><Lock className="w-4 h-4 text-indigo-400" />Room ID Set</p>
+                    <p className="text-[10px] text-slate-500">Category select korun → match select korun → Room ID + Password confirm korun.</p>
+                  </div>
+                  {matchCategories.map(c => (
+                    <button key={c.id} onClick={() => { setRoomIdCategoryView(c.id); setRoomIdMatchView(null); }} className={`w-full text-left ${t.card} border ${t.border} rounded-xl p-3 flex items-center justify-between`}>
+                      <div className="flex items-center space-x-2">
+                        <IconBox value={c.image} size="w-9 h-9" textSize="text-lg" />
+                        <div><p className="text-xs font-bold">{c.name}</p><p className="text-[10px] text-slate-500">{tournaments.filter(mt => mt.categoryId === c.id).length} match</p></div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-500" />
+                    </button>
+                  ))}
+                </div>
+              );
+            }
+
+            if (!roomIdMatchView) {
+              return (
+                <div className="space-y-2">
+                  <button onClick={() => setRoomIdCategoryView(null)} className="flex items-center gap-1.5 text-xs font-bold text-slate-400 mb-1"><ArrowLeft className="w-4 h-4" /><span>Category List</span></button>
+                  <p className="text-xs font-bold flex items-center gap-1.5"><IconBox value={selectedCategory?.image} size="w-7 h-7" textSize="text-sm" /><span>{selectedCategory?.name || 'Matches'}</span></p>
+                  {categoryMatches.length === 0 ? (
+                    <div className={`${t.card} border ${t.border} rounded-xl p-6 text-center text-xs text-slate-500`}>Ei category-te ekhono kono match add kora hoyni.</div>
+                  ) : categoryMatches.map(mt => {
+                    const list = matchParticipants[mt.id] || [];
+                    const hasRoom = Boolean(mt.roomInfo?.id && mt.roomInfo?.pass);
+                    return (
+                      <button key={mt.id} onClick={() => openRoomIdMatch(mt)} className={`w-full text-left ${t.card} border ${t.border} rounded-xl p-3 flex items-center justify-between`}>
+                        <div className="flex items-center space-x-2 min-w-0">
+                          <IconBox value={mt.image} size="w-10 h-10" textSize="text-lg" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold truncate">{mt.title}</p>
+                            <p className="text-[10px] text-slate-500">{mt.mode} • {list.length} joined • {mt.time}</p>
+                            <p className={`text-[10px] font-bold ${hasRoom ? 'text-emerald-400' : 'text-amber-400'}`}>{hasRoom ? 'Room set ✓' : 'Room not set'}</p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-3">
+                <button onClick={() => { setRoomIdMatchView(null); setRoomIdInput(''); setRoomPasswordInput(''); }} className="flex items-center gap-1.5 text-xs font-bold text-slate-400"><ArrowLeft className="w-4 h-4" /><span>Match List</span></button>
+                <div className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-3`}>
+                  <div className="flex items-center gap-3">
+                    <IconBox value={selectedMatch.image} size="w-12 h-12" textSize="text-xl" />
+                    <div className="min-w-0"><p className="text-sm font-black truncate">{selectedMatch.title}</p><p className="text-[10px] text-slate-500">{selectedMatch.category} • {selectedMatch.mode} • {participants.length} joined • {selectedMatch.slotsFilled}/{selectedMatch.totalSlots}</p></div>
+                  </div>
+                  <input value={roomIdInput} onChange={(e) => setRoomIdInput(e.target.value)} placeholder="Room ID" className={`w-full ${t.input} border p-3 rounded-xl text-xs font-mono`} />
+                  <input value={roomPasswordInput} onChange={(e) => setRoomPasswordInput(e.target.value)} placeholder="Room Password" className={`w-full ${t.input} border p-3 rounded-xl text-xs font-mono`} />
+                  <button disabled={roomInfoSaving} onClick={() => handleConfirmRoomInfo(selectedMatch)} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2"><CheckCircle className="w-4 h-4" />{roomInfoSaving ? 'SAVING...' : 'CONFIRM ROOM ID & PASSWORD'}</button>
+                  {selectedMatch.roomInfo?.id && selectedMatch.roomInfo?.pass && <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-[10px] text-emerald-400">✓ Room info saved. Joined users-er My Matches-e live update hoye jabe.</div>}
+                </div>
+
+                <div className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-2`}>
+                  <p className="text-xs font-bold flex items-center gap-1.5"><Users className="w-4 h-4 text-cyan-400" />Joined Players / FF UID</p>
+                  {participants.length === 0 ? <p className="text-[11px] text-slate-500 text-center py-4">Ekhono kew ei match-e join kore ni.</p> : participants.map((p, idx) => (
+                    <div key={p.id || idx} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-2`}>
+                      <div className="flex items-center justify-between"><div><p className="text-[11px] font-bold">{p.accountName}</p><p className="text-[10px] text-slate-500 font-mono">Account UID: {p.accountUid}</p></div><span className="text-[10px] font-bold text-cyan-400">#{idx + 1}</span></div>
+                      <div className="space-y-1">{(p.players || []).map((pl, pIdx) => <div key={pIdx} className={`${darkMode ? 'bg-slate-900' : 'bg-white'} rounded-lg px-2.5 py-2 flex items-center justify-between`}><span className="text-[10px] text-slate-500">P{pIdx + 1} {pl.ign || 'Player'}</span><span className="text-[10px] font-mono font-bold text-indigo-400">{pl.uid || '—'}</span></div>)}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <button onClick={() => handleToggleMatchStarted(selectedMatch.id)} className={`w-full py-3 rounded-xl text-xs font-black flex items-center justify-center gap-2 ${selectedMatch.started ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : `${t.input} border ${t.sub}`}`}><Flame className="w-4 h-4" /><span>{selectedMatch.started ? 'MATCH STARTED ✓ (tap to unset)' : 'START MATCH'}</span></button>
+                <button onClick={() => handleAutomateDaily(selectedMatch)} className="w-full py-3 rounded-xl text-xs font-black flex items-center justify-center gap-2 bg-violet-500/10 text-violet-400 border border-violet-500/30"><Bot className="w-4 h-4" /><span>AUTOMATE DAILY</span></button>
+              </div>
+            );
+          })()}
 
                     {adminTab === 'players' && (
             <div className="space-y-2">
@@ -4392,10 +4509,10 @@ ${buildUserContextBrief(uid)}`;
                       <span className="text-slate-500 font-semibold">{mt.slotsFilled}/{mt.totalSlots} joined</span>
                     </div>
                     <CountdownTimer timeStr={mt.time} started={mt.started} compact />
-                    {isJoinedByMe(mt.id) && mt.roomInfo && mt.roomInfo.pass && (
-                      <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} border border-indigo-500/20 rounded-lg px-3 py-2 flex items-center justify-between`}>
-                        <span className="flex items-center gap-1.5 text-[10px] text-slate-500"><Lock className="w-3 h-3 text-indigo-400" />Room Password</span>
-                        <button onClick={(e) => { e.stopPropagation(); copyToClipboard(mt.roomInfo.pass, 'Room Password'); }} className="flex items-center gap-1.5 text-xs font-mono font-bold text-indigo-300">{mt.roomInfo.pass}<Copy className="w-3 h-3 text-slate-500" /></button>
+                    {isJoinedByMe(mt.id) && mt.roomInfo && mt.roomInfo.id && mt.roomInfo.pass && (
+                      <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} border border-indigo-500/20 rounded-lg px-3 py-2 space-y-1.5`}>
+                        <div className="flex items-center justify-between"><span className="flex items-center gap-1.5 text-[10px] text-slate-500"><Lock className="w-3 h-3 text-indigo-400" />Room ID</span><button onClick={(e) => { e.stopPropagation(); copyToClipboard(mt.roomInfo.id, 'Room ID'); }} className="flex items-center gap-1.5 text-xs font-mono font-bold text-indigo-300">{mt.roomInfo.id}<Copy className="w-3 h-3 text-slate-500" /></button></div>
+                        <div className="flex items-center justify-between"><span className="flex items-center gap-1.5 text-[10px] text-slate-500"><Lock className="w-3 h-3 text-indigo-400" />Room Password</span><button onClick={(e) => { e.stopPropagation(); copyToClipboard(mt.roomInfo.pass, 'Room Password'); }} className="flex items-center gap-1.5 text-xs font-mono font-bold text-indigo-300">{mt.roomInfo.pass}<Copy className="w-3 h-3 text-slate-500" /></button></div>
                       </div>
                     )}
                     {myEntry ? (
