@@ -5088,60 +5088,72 @@ ${buildUserContextBrief(uid)}`;
         const myViews = profileViewEvents.filter(v => v.targetUid === user.uid && Number(v.viewedAt || 0) >= Date.now() - 24*60*60*1000);
         const recentViewers = Array.from(new Map(myViews.filter(v => v.viewerUid && v.viewerUid !== user.uid).sort((a,b)=>(b.viewedAt||0)-(a.viewedAt||0)).map(v=>[v.viewerUid,v])).values()).slice(0,8);
         return (
-          <div className="p-4 space-y-4">
-            <div className="relative overflow-hidden rounded-3xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950 via-slate-950 to-violet-950 p-5 shadow-xl">
+          <div className="p-4">
+            {/* Single compact Player Profile Card: profile + stats + rank + achievements + views */}
+            <div className="relative overflow-hidden rounded-3xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950 via-slate-950 to-violet-950 p-4 sm:p-5 shadow-xl">
               <div className="absolute -right-10 -top-10 w-36 h-36 rounded-full bg-indigo-500/15 blur-2xl" />
-              <div className="relative flex items-start space-x-4">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center font-black text-white text-2xl overflow-hidden flex-shrink-0 border-2 border-white/10">
-                  {user.avatar ? <img src={user.avatar} alt="" className="w-full h-full object-cover" /> : (user.name || 'U').charAt(0)}
+              <div className="relative">
+                <div className="flex items-start gap-3 sm:gap-4">
+                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center font-black text-white text-2xl overflow-hidden flex-shrink-0 border-2 border-indigo-400/70 shadow-lg shadow-indigo-900/30">
+                    {user.avatar ? <img src={user.avatar} alt="" className="w-full h-full object-cover" /> : (user.name || 'U').charAt(0)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-300 font-black">UR FF TOUR</p>
+                    <h2 className="font-black text-xl sm:text-2xl truncate mt-1">{user.name}</h2>
+                    <p className="text-[10px] text-slate-400 font-mono mt-1">UID: {user.uid}</p>
+                    <button onClick={()=>setShowRankDetails(true)} className="inline-flex items-center gap-2 mt-2 px-2.5 py-1 rounded-full bg-black/30 border border-white/10">
+                      <img src={RANK_BADGES[getRankBadgeKey(rank)] || RANK_BADGES.bronze} className="w-9 h-8 object-contain rounded-md" alt="" />
+                      <span className="text-xs font-black text-cyan-300">{rank.name}{rank.level ? ` ${rank.level}` : ''}</span>
+                      <span className="text-[9px] text-slate-500">{rank.score} RP</span><span className="text-[9px] text-indigo-300">ⓘ</span>
+                    </button>
+                  </div>
+                  <button onClick={openProfileSettings} className="p-2.5 bg-white/5 border border-white/10 rounded-xl flex-shrink-0"><Edit3 className="w-4 h-4 text-indigo-300" /></button>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-300 font-black">UR FF TOUR</p>
-                  <h2 className="font-black text-xl truncate mt-1">{user.name}</h2>
-                  <p className="text-[10px] text-slate-400 font-mono mt-1">UID: {user.uid}</p>
-                  <button onClick={()=>setShowRankDetails(true)} className="inline-flex items-center gap-2 mt-2 px-2.5 py-1 rounded-full bg-black/30 border border-white/10">
-                    <img src={RANK_BADGES[getRankBadgeKey(rank)] || RANK_BADGES.bronze} className="w-9 h-7 object-contain rounded-md" alt="" />
-                    <span className="text-xs font-black text-cyan-300">{rank.name}{rank.level ? ` ${rank.level}` : ''}</span><span className="text-[9px] text-slate-500">{rank.score} RP</span><span className="text-[9px] text-indigo-300">ⓘ</span>
+
+                <div className="grid grid-cols-4 gap-1.5 sm:gap-2 mt-4">
+                  {[['🏆','Wins',stats.wins],['🔥','Kills',stats.kills],['🎮','Matches',stats.matches],['💰','Winnings',`৳${stats.winnings}`]].map(([icon,label,val]) => (
+                    <div key={label} className="rounded-xl bg-black/20 border border-white/5 p-2 text-center min-w-0"><div className="text-sm">{icon}</div><p className="text-[9px] text-slate-500 mt-1">{label}</p><p className="text-xs font-black text-white truncate">{val}</p></div>
+                  ))}
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-white/10">
+                  <div className="flex items-center justify-between mb-2"><p className="text-xs font-black">Player Stats</p><span className="text-[10px] text-indigo-300 font-bold">Leaderboard #{leaderboardPosition || '—'}</span></div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
+                    {[['Total Matches',stats.matches],['Wins',stats.wins],['Total Kills',stats.kills],['Total Winnings',`৳${stats.winnings}`],['Tournament Participation',stats.participation],['Profile Likes',profileLikes[user.uid]||0]].map(([k,v]) => (
+                      <div key={k} className="rounded-xl bg-black/20 border border-white/5 p-2.5"><p className="text-[9px] text-slate-500">{k}</p><p className="text-sm font-black mt-1">{v}</p></div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-white/10">
+                  <div className="flex items-center justify-between mb-2"><p className="text-xs font-black">Rank & Rewards</p><span className="text-[10px] text-amber-400 font-bold">{getRankRewardLevels().filter(l=>rank.score>=Number(l.min)).length}/{getRankRewardLevels().length} unlocked</span></div>
+                  <button onClick={()=>setShowRankDetails(true)} className="w-full flex items-center gap-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-2.5 text-left">
+                    <img src={RANK_BADGES[getRankBadgeKey(rank)] || RANK_BADGES.bronze} className="w-14 h-11 object-contain rounded-lg" alt="" />
+                    <div className="flex-1 min-w-0"><p className="text-sm font-black truncate">{rank.name}{rank.level ? ` ${rank.level}` : ''}</p><p className="text-[10px] text-slate-500">{rank.score} RP • Season ends in {rankSeason.endMs ? Math.max(0, Math.ceil((rankSeason.endMs-rankNowMs)/86400000)) : '—'} days</p></div><span className="text-indigo-300">ⓘ</span>
                   </button>
+                  <p className="text-[10px] text-slate-500 mt-2">Rank Reward Balance: <span className="text-amber-400 font-bold">${Number(user.rankRewardBalanceUsd||0).toFixed(2)}</span></p>
                 </div>
-                <button onClick={openProfileSettings} className="p-2 bg-white/5 border border-white/10 rounded-xl"><Edit3 className="w-4 h-4 text-indigo-300" /></button>
-              </div>
-              <div className="grid grid-cols-4 gap-2 mt-5">
-                {[['🏆','Wins',stats.wins],['🔥','Kills',stats.kills],['🎮','Matches',stats.matches],['💰','Winnings',`৳${stats.winnings}`]].map(([icon,label,val]) => (
-                  <div key={label} className="rounded-xl bg-black/20 border border-white/5 p-2 text-center"><div className="text-sm">{icon}</div><p className="text-[9px] text-slate-500 mt-1">{label}</p><p className="text-xs font-black text-white">{val}</p></div>
-                ))}
-              </div>
-            </div>
 
-            <div className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-3`}>
-              <div className="flex items-center justify-between"><p className="text-xs font-black">Player Stats</p><span className="text-[10px] text-indigo-400 font-bold">Leaderboard #{leaderboardPosition || '—'}</span></div>
-              <div className="grid grid-cols-2 gap-2">
-                {[['Total Matches',stats.matches],['Wins',stats.wins],['Total Kills',stats.kills],['Total Winnings',`৳${stats.winnings}`],['Tournament Participation',stats.participation],['Profile Likes',profileLikes[user.uid]||0]].map(([k,v]) => <div key={k} className={`${darkMode?'bg-slate-950':'bg-slate-100'} rounded-xl p-3`}><p className="text-[9px] text-slate-500">{k}</p><p className="text-sm font-black mt-1">{v}</p></div>)}
-              </div>
-              <div className="flex items-center justify-between text-xs"><span className="text-slate-500">Profile Views</span><span className="font-bold">👁 {myViews.length}</span></div>
-            </div>
+                <div className="mt-4 pt-4 border-t border-white/10">
+                  <div className="flex items-center justify-between mb-2"><p className="text-xs font-black">Achievements</p><span className="text-[10px] text-amber-400 font-bold">{achievements.filter(a=>a.unlocked).length}/{achievements.length} unlocked</span></div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
+                    {achievements.map(a => <div key={a.id} className={`rounded-xl p-2.5 border ${a.unlocked?'border-amber-400/30 bg-amber-400/5':'border-white/5 bg-black/10 opacity-45'}`}><div className="text-xl">{a.icon}</div><p className="text-[10px] font-bold mt-1">{a.name}</p><p className="text-[9px] text-slate-500">{a.unlocked?'Unlocked':'Locked'}</p></div>)}
+                  </div>
+                </div>
 
-            <div className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-3`}>
-              <div className="flex items-center justify-between"><p className="text-xs font-black">Rank & Rewards</p><span className="text-[10px] text-amber-400 font-bold">{getRankRewardLevels().filter(l=>rank.score>=Number(l.min)).length}/{getRankRewardLevels().length} unlocked</span></div>
-              <button onClick={()=>setShowRankDetails(true)} className="w-full flex items-center gap-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-3 text-left">
-                <img src={RANK_BADGES[getRankBadgeKey(rank)] || RANK_BADGES.bronze} className="w-14 h-11 object-contain rounded-lg" alt="" />
-                <div className="flex-1"><p className="text-sm font-black">{rank.name}{rank.level ? ` ${rank.level}` : ''}</p><p className="text-[10px] text-slate-500">{rank.score} RP • Season ends in {rankSeason.endMs ? Math.max(0, Math.ceil((rankSeason.endMs-rankNowMs)/86400000)) : '—'} days</p></div>
-                <span className="text-indigo-300">ⓘ</span>
-              </button>
-              <p className="text-[10px] text-slate-500">Rank Reward Balance: <span className="text-amber-400 font-bold">${Number(user.rankRewardBalanceUsd||0).toFixed(2)}</span></p>
-            </div>
-
-            <div className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-3`}>
-              <div className="flex items-center justify-between"><p className="text-xs font-black">Achievements</p><span className="text-[10px] text-amber-400 font-bold">{achievements.filter(a=>a.unlocked).length}/{achievements.length} unlocked</span></div>
-              <div className="grid grid-cols-2 gap-2">
-                {achievements.map(a => <div key={a.id} className={`rounded-xl p-3 border ${a.unlocked?'border-amber-400/30 bg-amber-400/5':'border-slate-800 opacity-45'}`}><div className="text-xl">{a.icon}</div><p className="text-[10px] font-bold mt-1">{a.name}</p><p className="text-[9px] text-slate-500">{a.unlocked?'Unlocked':'Locked'}</p></div>)}
+                <div className="mt-4 pt-4 border-t border-white/10">
+                  <div className="flex items-center justify-between mb-2"><p className="text-xs font-black">Profile Views — Last 24 Hours</p><button onClick={handleClearProfileViews} className="text-[9px] font-black text-red-400">CLEAR</button></div>
+                  {recentViewers.length===0 ? (
+                    <div className="flex items-center justify-between text-xs"><span className="text-slate-500">Last 24 hours-e keu profile dekheni.</span><span className="font-bold">👁 {myViews.length}</span></div>
+                  ) : (
+                    <div className="space-y-1">
+                      {recentViewers.map(v=>{const vp=registeredUsers.find(u=>u.uid===v.viewerUid);return <button key={v.id} onClick={()=>openPublicProfile(v.viewerUid)} className="w-full flex items-center gap-3 text-left py-1.5 rounded-lg hover:bg-white/5"><div className="w-8 h-8 rounded-lg overflow-hidden bg-slate-800 flex-shrink-0">{vp?.avatar?<img src={vp.avatar} className="w-full h-full object-cover" alt=""/>:<div className="w-full h-full flex items-center justify-center text-[10px] font-black">{(vp?.name||'P').charAt(0)}</div>}</div><span className="flex-1 text-xs">{vp?.name || 'Player'} <span className="font-mono text-slate-500">({v.viewerUid})</span></span><ChevronRight className="w-3.5 h-3.5 text-slate-500"/></button>})}
+                      <div className="flex justify-end pt-1"><span className="text-[10px] text-slate-500">👁 {myViews.length} views</span></div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-
-            {<div className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-2`}>
-              <div className="flex items-center justify-between"><p className="text-xs font-black">Profile Views — Last 24 Hours</p><button onClick={handleClearProfileViews} className="text-[9px] font-black text-red-400">CLEAR</button></div>
-              {recentViewers.length===0 ? <p className="text-[10px] text-slate-500">Last 24 hours-e keu profile dekheni.</p> : recentViewers.map(v=>{const vp=registeredUsers.find(u=>u.uid===v.viewerUid);return <button key={v.id} onClick={()=>openPublicProfile(v.viewerUid)} className="w-full flex items-center gap-3 text-left py-1.5"><div className="w-8 h-8 rounded-lg overflow-hidden bg-slate-800 flex-shrink-0">{vp?.avatar?<img src={vp.avatar} className="w-full h-full object-cover" alt=""/>:<div className="w-full h-full flex items-center justify-center text-[10px] font-black">{(vp?.name||'P').charAt(0)}</div>}</div><span className="flex-1 text-xs">{vp?.name || 'Player'} <span className="font-mono text-slate-500">({v.viewerUid})</span></span><ChevronRight className="w-3.5 h-3.5 text-slate-500"/></button>})}
-            </div>}
 
             <div className={`${t.card} border ${t.border} rounded-2xl divide-y ${t.border}`}>
               <button onClick={openProfileSettings} className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2"><User className="w-4 h-4 text-slate-400" /><span>Edit Profile (Name & Photo)</span></span><ChevronRight className="w-4 h-4 text-slate-500" /></button>
