@@ -2539,6 +2539,25 @@ ${buildUserContextBrief(uid)}`;
   const isImageUrl = (val) => typeof val === 'string' && (val.startsWith('data:image') || val.startsWith('http'));
 
   // ---------- POLISHED SPLASH / BAN SCREENS ----------
+  // Rank/achievement transitions are derived from match results; play a small one-time sound when a new level/badge appears.
+  useEffect(() => {
+    if (!user.uid) return;
+    try {
+      const rankKey = `urff_last_rank_${user.uid}`;
+      const rankNow = getRankInfo(getPlayerStats(user.uid));
+      const rankValue = `${rankNow.name} ${rankNow.level}`;
+      const prevRank = localStorage.getItem(rankKey);
+      if (prevRank && prevRank !== rankValue) { playUiSound('rank'); showToast(`Rank upgrade: ${rankValue}`); }
+      localStorage.setItem(rankKey, rankValue);
+      const achKey = `urff_unlocked_achievements_${user.uid}`;
+      const unlocked = getPlayerAchievements(user.uid).filter(a=>a.unlocked).map(a=>a.id).sort();
+      const prev = JSON.parse(localStorage.getItem(achKey) || '[]');
+      const newly = unlocked.filter(id => !prev.includes(id));
+      if (prev.length > 0 && newly.length > 0) { playUiSound('success'); showToast('New achievement unlocked! 🏅'); }
+      localStorage.setItem(achKey, JSON.stringify(unlocked));
+    } catch {}
+  }, [user.uid, matchResultsHistory, matchParticipants, playerStatAdjustments, rankConfig, achievementConfig]);
+
   if (showSplash) {
     return (
       <div className="fixed inset-0 z-[100] overflow-hidden bg-slate-950 text-white flex items-center justify-center">
@@ -4536,25 +4555,6 @@ ${buildUserContextBrief(uid)}`;
       </div>
     );
   }
-
-  // Rank/achievement transitions are derived from match results; play a small one-time sound when a new level/badge appears.
-  useEffect(() => {
-    if (!user.uid) return;
-    try {
-      const rankKey = `urff_last_rank_${user.uid}`;
-      const rankNow = getRankInfo(getPlayerStats(user.uid));
-      const rankValue = `${rankNow.name} ${rankNow.level}`;
-      const prevRank = localStorage.getItem(rankKey);
-      if (prevRank && prevRank !== rankValue) { playUiSound('rank'); showToast(`Rank upgrade: ${rankValue}`); }
-      localStorage.setItem(rankKey, rankValue);
-      const achKey = `urff_unlocked_achievements_${user.uid}`;
-      const unlocked = getPlayerAchievements(user.uid).filter(a=>a.unlocked).map(a=>a.id).sort();
-      const prev = JSON.parse(localStorage.getItem(achKey) || '[]');
-      const newly = unlocked.filter(id => !prev.includes(id));
-      if (prev.length > 0 && newly.length > 0) { playUiSound('success'); showToast('New achievement unlocked! 🏅'); }
-      localStorage.setItem(achKey, JSON.stringify(unlocked));
-    } catch {}
-  }, [user.uid, matchResultsHistory, matchParticipants, playerStatAdjustments, rankConfig, achievementConfig]);
 
   // ---------- MAIN LAYOUT ----------
   const navItems = [
