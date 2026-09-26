@@ -509,6 +509,7 @@ export default function App() {
   const [rankNowMs, setRankNowMs] = useState(Date.now());
   const [rankClaims, setRankClaims] = useState({ seasonId: '', claimedKeys: [] });
   const [showRankDetails, setShowRankDetails] = useState(false);
+  const [showPlayerDetails, setShowPlayerDetails] = useState(false);
   const [achievementConfig, setAchievementConfig] = useState(DEFAULT_ACHIEVEMENT_CONFIG);
   const [playerStatAdjustments, setPlayerStatAdjustments] = useState({});
   const [adminPlayerSystemSearch, setAdminPlayerSystemSearch] = useState('');
@@ -1067,7 +1068,7 @@ export default function App() {
   // way to scroll the modal content or back out of it.
   const anyModalOpen = showNotifications || showCheckInModal || showJoinModal || showHistory ||
     showMyOrders || showBalanceShare || showInviteFriends || showAppDeveloper || showProfileSettings ||
-    showAllResults || showLeaderboard || showAskProblem || showPlayerSearch || showRankDetails || !!publicProfileUid || !!walletAction || !!selectedProduct || !!rejectModalData ||
+    showAllResults || showLeaderboard || showAskProblem || showPlayerSearch || showRankDetails || showPlayerDetails || !!publicProfileUid || !!walletAction || !!selectedProduct || !!rejectModalData ||
     !!matchResultsModal;
   useEffect(() => {
     if (anyModalOpen) {
@@ -5086,10 +5087,15 @@ ${buildUserContextBrief(uid)}`;
         const achievements = getPlayerAchievements(user.uid);
         const leaderboardPosition = getPlayerLeaderboardPosition(user.uid, 'alltime');
         const myViews = profileViewEvents.filter(v => v.targetUid === user.uid && Number(v.viewedAt || 0) >= Date.now() - 24*60*60*1000);
-        const recentViewers = Array.from(new Map(myViews.filter(v => v.viewerUid && v.viewerUid !== user.uid).sort((a,b)=>(b.viewedAt||0)-(a.viewedAt||0)).map(v=>[v.viewerUid,v])).values()).slice(0,8);
+        const recentViewers = Array.from(new Map(
+          myViews.filter(v => v.viewerUid && v.viewerUid !== user.uid)
+            .sort((a,b)=>(b.viewedAt||0)-(a.viewedAt||0))
+            .map(v=>[v.viewerUid,v])
+        ).values()).slice(0,8);
+
         return (
           <div className="p-4">
-            {/* Single compact Player Profile Card: profile + stats + rank + achievements + views */}
+            {/* Compact profile: only the essential information stays in the main card. */}
             <div className="relative overflow-hidden rounded-3xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950 via-slate-950 to-violet-950 p-4 sm:p-5 shadow-xl">
               <div className="absolute -right-10 -top-10 w-36 h-36 rounded-full bg-indigo-500/15 blur-2xl" />
               <div className="relative">
@@ -5112,12 +5118,17 @@ ${buildUserContextBrief(uid)}`;
 
                 <div className="grid grid-cols-4 gap-1.5 sm:gap-2 mt-4">
                   {[['🏆','Wins',stats.wins],['🔥','Kills',stats.kills],['🎮','Matches',stats.matches],['💰','Winnings',`৳${stats.winnings}`]].map(([icon,label,val]) => (
-                    <div key={label} className="rounded-xl bg-black/20 border border-white/5 p-2 text-center min-w-0"><div className="text-sm">{icon}</div><p className="text-[9px] text-slate-500 mt-1">{label}</p><p className="text-xs font-black text-white truncate">{val}</p></div>
+                    <div key={label} className="rounded-xl bg-black/20 border border-white/5 p-2 text-center min-w-0">
+                      <div className="text-sm">{icon}</div><p className="text-[9px] text-slate-500 mt-1">{label}</p><p className="text-xs font-black text-white truncate">{val}</p>
+                    </div>
                   ))}
                 </div>
 
-                <div className="mt-4 pt-4 border-t border-white/10">
-                  <div className="flex items-center justify-between mb-2"><p className="text-xs font-black">Player Stats</p><span className="text-[10px] text-indigo-300 font-bold">Leaderboard #{leaderboardPosition || '—'}</span></div>
+                <div className="mt-4 pt-3 border-t border-white/10">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-black">Player Stats</p>
+                    <span className="text-[10px] text-indigo-300 font-bold">Leaderboard #{leaderboardPosition || '—'}</span>
+                  </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
                     {[['Total Matches',stats.matches],['Wins',stats.wins],['Total Kills',stats.kills],['Total Winnings',`৳${stats.winnings}`],['Tournament Participation',stats.participation],['Profile Likes',profileLikes[user.uid]||0]].map(([k,v]) => (
                       <div key={k} className="rounded-xl bg-black/20 border border-white/5 p-2.5"><p className="text-[9px] text-slate-500">{k}</p><p className="text-sm font-black mt-1">{v}</p></div>
@@ -5125,33 +5136,15 @@ ${buildUserContextBrief(uid)}`;
                   </div>
                 </div>
 
-                <div className="mt-4 pt-4 border-t border-white/10">
-                  <div className="flex items-center justify-between mb-2"><p className="text-xs font-black">Rank & Rewards</p><span className="text-[10px] text-amber-400 font-bold">{getRankRewardLevels().filter(l=>rank.score>=Number(l.min)).length}/{getRankRewardLevels().length} unlocked</span></div>
-                  <button onClick={()=>setShowRankDetails(true)} className="w-full flex items-center gap-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-2.5 text-left">
-                    <img src={RANK_BADGES[getRankBadgeKey(rank)] || RANK_BADGES.bronze} className="w-14 h-11 object-contain rounded-lg" alt="" />
-                    <div className="flex-1 min-w-0"><p className="text-sm font-black truncate">{rank.name}{rank.level ? ` ${rank.level}` : ''}</p><p className="text-[10px] text-slate-500">{rank.score} RP • Season ends in {rankSeason.endMs ? Math.max(0, Math.ceil((rankSeason.endMs-rankNowMs)/86400000)) : '—'} days</p></div><span className="text-indigo-300">ⓘ</span>
-                  </button>
-                  <p className="text-[10px] text-slate-500 mt-2">Rank Reward Balance: <span className="text-amber-400 font-bold">${Number(user.rankRewardBalanceUsd||0).toFixed(2)}</span></p>
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-white/10">
-                  <div className="flex items-center justify-between mb-2"><p className="text-xs font-black">Achievements</p><span className="text-[10px] text-amber-400 font-bold">{achievements.filter(a=>a.unlocked).length}/{achievements.length} unlocked</span></div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
-                    {achievements.map(a => <div key={a.id} className={`rounded-xl p-2.5 border ${a.unlocked?'border-amber-400/30 bg-amber-400/5':'border-white/5 bg-black/10 opacity-45'}`}><div className="text-xl">{a.icon}</div><p className="text-[10px] font-bold mt-1">{a.name}</p><p className="text-[9px] text-slate-500">{a.unlocked?'Unlocked':'Locked'}</p></div>)}
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-white/10">
-                  <div className="flex items-center justify-between mb-2"><p className="text-xs font-black">Profile Views — Last 24 Hours</p><button onClick={handleClearProfileViews} className="text-[9px] font-black text-red-400">CLEAR</button></div>
-                  {recentViewers.length===0 ? (
-                    <div className="flex items-center justify-between text-xs"><span className="text-slate-500">Last 24 hours-e keu profile dekheni.</span><span className="font-bold">👁 {myViews.length}</span></div>
-                  ) : (
-                    <div className="space-y-1">
-                      {recentViewers.map(v=>{const vp=registeredUsers.find(u=>u.uid===v.viewerUid);return <button key={v.id} onClick={()=>openPublicProfile(v.viewerUid)} className="w-full flex items-center gap-3 text-left py-1.5 rounded-lg hover:bg-white/5"><div className="w-8 h-8 rounded-lg overflow-hidden bg-slate-800 flex-shrink-0">{vp?.avatar?<img src={vp.avatar} className="w-full h-full object-cover" alt=""/>:<div className="w-full h-full flex items-center justify-center text-[10px] font-black">{(vp?.name||'P').charAt(0)}</div>}</div><span className="flex-1 text-xs">{vp?.name || 'Player'} <span className="font-mono text-slate-500">({v.viewerUid})</span></span><ChevronRight className="w-3.5 h-3.5 text-slate-500"/></button>})}
-                      <div className="flex justify-end pt-1"><span className="text-[10px] text-slate-500">👁 {myViews.length} views</span></div>
-                    </div>
-                  )}
-                </div>
+                {/* All extra profile information is opened from one button instead of making the page taller. */}
+                <button
+                  onClick={()=>setShowPlayerDetails(true)}
+                  className="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600/90 to-violet-600/90 border border-indigo-400/20 text-white text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/30 active:scale-[0.99] transition"
+                >
+                  <User className="w-4 h-4" />
+                  <span>PLAYER DETAILS</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
@@ -5170,6 +5163,71 @@ ${buildUserContextBrief(uid)}`;
               <button onClick={() => setActiveTab('admin')} className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2"><Shield className="w-4 h-4 text-slate-400" /><span>Admin Panel</span></span><ChevronRight className="w-4 h-4 text-slate-500" /></button>
             </div>
             <button onClick={handleLogout} className="w-full py-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5"><Power className="w-4 h-4" /><span>Logout</span></button>
+          </div>
+        );
+      })()}
+
+      {showPlayerDetails && (() => {
+        const stats = getPlayerStats(user.uid);
+        const rank = getCurrentRankInfo(user.uid);
+        const achievements = getPlayerAchievements(user.uid);
+        const leaderboardPosition = getPlayerLeaderboardPosition(user.uid, 'alltime');
+        const myViews = profileViewEvents.filter(v => v.targetUid === user.uid && Number(v.viewedAt || 0) >= Date.now() - 24*60*60*1000);
+        const recentViewers = Array.from(new Map(
+          myViews.filter(v => v.viewerUid && v.viewerUid !== user.uid)
+            .sort((a,b)=>(b.viewedAt||0)-(a.viewedAt||0))
+            .map(v=>[v.viewerUid,v])
+        ).values()).slice(0,8);
+        const seasonDays = rankSeason.endMs ? Math.max(0, Math.ceil((rankSeason.endMs-rankNowMs)/86400000)) : '—';
+        return (
+          <div className="fixed inset-0 z-[68] bg-black/90 overflow-y-auto p-3" onClick={()=>setShowPlayerDetails(false)}>
+            <div className="max-w-lg mx-auto" onClick={e=>e.stopPropagation()}>
+              <div className={`${t.card} border ${t.border} rounded-2xl overflow-hidden shadow-2xl`}>
+                <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 bg-slate-950/95 backdrop-blur border-b border-white/10">
+                  <div><p className="text-sm font-black">PLAYER DETAILS</p><p className="text-[9px] text-slate-500">{user.name} • {user.uid}</p></div>
+                  <button onClick={()=>setShowPlayerDetails(false)} className="p-1.5 rounded-lg bg-white/5"><X className="w-5 h-5" /></button>
+                </div>
+
+                <div className="p-4 space-y-4">
+                  <section>
+                    <div className="flex items-center justify-between mb-2"><p className="text-xs font-black">Player Status</p><span className="text-[10px] text-indigo-300 font-bold">Leaderboard #{leaderboardPosition || '—'}</span></div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[['Total Matches',stats.matches],['Wins',stats.wins],['Total Kills',stats.kills],['Total Winnings',`৳${stats.winnings}`],['Tournament Participation',stats.participation],['Profile Likes',profileLikes[user.uid]||0]].map(([k,v]) => (
+                        <div key={k} className="rounded-xl bg-black/25 border border-white/5 p-3"><p className="text-[9px] text-slate-500">{k}</p><p className="text-sm font-black mt-1">{v}</p></div>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="border-t border-white/10 pt-4">
+                    <div className="flex items-center justify-between mb-2"><p className="text-xs font-black">Rank & Rewards</p><span className="text-[10px] text-amber-400 font-bold">{getRankRewardLevels().filter(l=>rank.score>=Number(l.min)).length}/{getRankRewardLevels().length} unlocked</span></div>
+                    <button onClick={()=>{setShowPlayerDetails(false);setShowRankDetails(true)}} className="w-full flex items-center gap-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-3 text-left">
+                      <img src={RANK_BADGES[getRankBadgeKey(rank)] || RANK_BADGES.bronze} className="w-16 h-14 object-contain rounded-lg" alt="" />
+                      <div className="flex-1 min-w-0"><p className="text-sm font-black">{rank.name}{rank.level ? ` ${rank.level}` : ''}</p><p className="text-[10px] text-slate-500">{rank.score} RP • Season ends in {seasonDays} days</p></div><span className="text-indigo-300">ⓘ</span>
+                    </button>
+                    <p className="text-[10px] text-slate-500 mt-2">Rank Reward Balance: <span className="text-amber-400 font-bold">${Number(user.rankRewardBalanceUsd||0).toFixed(2)}</span></p>
+                  </section>
+
+                  <section className="border-t border-white/10 pt-4">
+                    <div className="flex items-center justify-between mb-2"><p className="text-xs font-black">Achievements</p><span className="text-[10px] text-amber-400 font-bold">{achievements.filter(a=>a.unlocked).length}/{achievements.length} unlocked</span></div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {achievements.map(a => <div key={a.id} className={`rounded-xl p-3 border ${a.unlocked?'border-amber-400/30 bg-amber-400/5':'border-white/5 bg-black/10 opacity-45'}`}><div className="text-xl">{a.icon}</div><p className="text-[10px] font-bold mt-1">{a.name}</p><p className="text-[9px] text-slate-500">{a.unlocked?'Unlocked':'Locked'}</p></div>)}
+                    </div>
+                  </section>
+
+                  <section className="border-t border-white/10 pt-4">
+                    <div className="flex items-center justify-between mb-2"><p className="text-xs font-black">Profile Views — Last 24 Hours</p><button onClick={handleClearProfileViews} className="text-[9px] font-black text-red-400">CLEAR</button></div>
+                    {recentViewers.length===0 ? (
+                      <div className="flex items-center justify-between text-xs"><span className="text-slate-500">Last 24 hours-e keu profile dekheni.</span><span className="font-bold">👁 {myViews.length}</span></div>
+                    ) : (
+                      <div className="space-y-1">
+                        {recentViewers.map(v=>{const vp=registeredUsers.find(u=>u.uid===v.viewerUid);return <button key={v.id} onClick={()=>{setShowPlayerDetails(false);openPublicProfile(v.viewerUid)}} className="w-full flex items-center gap-3 text-left py-1.5 rounded-lg hover:bg-white/5"><div className="w-9 h-9 rounded-lg overflow-hidden bg-slate-800 flex-shrink-0">{vp?.avatar?<img src={vp.avatar} className="w-full h-full object-cover" alt=""/>:<div className="w-full h-full flex items-center justify-center text-[10px] font-black">{(vp?.name||'P').charAt(0)}</div>}</div><span className="flex-1 text-xs">{vp?.name || 'Player'} <span className="font-mono text-slate-500">({v.viewerUid})</span></span><ChevronRight className="w-3.5 h-3.5 text-slate-500"/></button>})}
+                        <div className="flex justify-end pt-1"><span className="text-[10px] text-slate-500">👁 {myViews.length} views</span></div>
+                      </div>
+                    )}
+                  </section>
+                </div>
+              </div>
+            </div>
           </div>
         );
       })()}
