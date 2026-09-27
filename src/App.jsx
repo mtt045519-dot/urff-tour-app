@@ -508,6 +508,7 @@ export default function App() {
   const [rankSeason, setRankSeason] = useState({ id: '', startMs: 0, endMs: 0 });
   const [rankNowMs, setRankNowMs] = useState(Date.now());
   const [rankClaims, setRankClaims] = useState({ seasonId: '', claimedKeys: [] });
+  const [rankBadgeUploadingKey, setRankBadgeUploadingKey] = useState('');
   const [showRankDetails, setShowRankDetails] = useState(false);
   const [showPlayerDetails, setShowPlayerDetails] = useState(false);
   const [achievementConfig, setAchievementConfig] = useState(DEFAULT_ACHIEVEMENT_CONFIG);
@@ -915,35 +916,115 @@ export default function App() {
   };
 
   const getRankBadgeKey = (rank) => String(rank?.name || 'Bronze').toLowerCase().replace(/\s+/g,'_');
-  // Rank badge resolver: always returns a real badge image, even if the rank object
-  // contains a full label such as "Bronze I" instead of separate name/level fields.
+
+  // Resolve the badge from the live admin-managed rank configuration first.
+  // This means a rank image uploaded in Player System immediately becomes the
+  // image used everywhere the current rank is rendered.
   const getRankBadgeSrc = (rank) => {
     const name = String(rank?.name || 'Bronze').trim();
+    const level = String(rank?.level || '').trim();
     const normalized = name.toLowerCase().replace(/\s+/g, '_');
+    const exactKey = `${normalized}_${level.toLowerCase()}`.replace(/_+$/,'');
     const tier = normalized.replace(/_(?:i|ii|iii|iv)$/i, '');
-    return RANK_BADGES[normalized] || RANK_BADGES[tier] || RANK_BADGES.bronze;
+    const configured = (rankConfig.levels || []).find(x =>
+      String(x.name || '').trim().toLowerCase() === name.toLowerCase() &&
+      String(x.level || '').trim().toLowerCase() === level.toLowerCase()
+    );
+    return configured?.badgeUrl || rank?.badgeUrl || RANK_BADGES[exactKey] || RANK_BADGES[normalized] || RANK_BADGES[tier] || RANK_BADGES.bronze;
   };
+
+  const handleRankBadgeUpload = async (levelIndex, file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      showToast('Rank badge er jonno shudhu image upload korun.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Rank image 5MB er moddhe rakhun.');
+      return;
+    }
+
+    const level = (rankConfig.levels || [])[levelIndex];
+    if (!level) return;
+    const key = `${level.name}_${level.level || ''}`;
+    setRankBadgeUploadingKey(key);
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`;
+      const fileRef = storageRef(getStorage(), `rank-badges/${uniqueName}`);
+      const snapshot = await uploadBytes(fileRef, file, {
+        contentType: file.type,
+        cacheControl: 'public,max-age=31536000',
+      });
+      const url = await getDownloadURL(snapshot.ref);
+      const next = {
+        ...rankConfig,
+        levels: (rankConfig.levels || []).map((x, i) => i === levelIndex ? { ...x, badgeUrl: url, badgeUpdatedAtMs: Date.now() } : x),
+      };
+      await setDoc(doc(db, 'appData', 'playerRankConfig'), next, { merge: true });
+      setRankConfig(next);
+      playUiSound('success');
+      showToast(`${level.name}${level.level ? ` ${level.level}` : ''} badge upload & save hoyeche.`);
+    } catch (e) {
+      console.error('Rank badge upload error:', e);
+      const code = e?.code ? ` [${e.code}]` : '';
+      showToast(`Rank badge upload failed${code}: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setRankBadgeUploadingKey('');
+    }
+  };
+
+  const handleRankBadgeClear = async (levelIndex) => {
+    const level = (rankConfig.levels || [])[levelIndex];
+    if (!level) return;
+    try {
+      const next = {
+        ...rankConfig,
+        levels: (rankConfig.levels || []).map((x, i) => i === levelIndex ? { ...x, badgeUrl: '' } : x),
+      };
+      await setDoc(doc(db, 'appData', 'playerRankConfig'), next, { merge: true });
+      setRankConfig(next);
+      showToast('Rank badge remove hoyeche.');
+    } catch (e) {
+      showToast(`Badge remove failed: ${e?.message || 'Unknown error'}`);
+    }
+  };
+
   const getRankRewardLevels = () => (rankConfig.levels || []).filter(x=>Number(x.rewardUsd || 0)>0);
 
   const handleClaimRankReward = async (rankKey) => {
     const level = (rankConfig.levels || []).find(x => `${x.name}_${x.level}` === rankKey);
     if (!level || !Number(level.rewardUsd || 0)) return;
+    const rewardAmount = Number(level.rewardUsd);
     const current = getCurrentRankInfo(user.uid);
     if (current.score < Number(level.min || 0)) { showToast('Ei reward ekhono unlock hoyni.'); return; }
     const claimsRef = doc(db,'rankClaims',user.uid);
     const userRef = doc(db,'users',user.uid);
     try {
       await runTransaction(db, async tx => {
-        const snap=await tx.get(claimsRef);
-        const d=snap.exists()?snap.data():{seasonId:rankSeason.id,claimedKeys:[]};
-        const claimed=d.seasonId===rankSeason.id && Array.isArray(d.claimedKeys)?d.claimedKeys:[];
-        if(claimed.includes(rankKey)) throw new Error('already_claimed');
-        tx.set(claimsRef,{seasonId:rankSeason.id,claimedKeys:[...claimed,rankKey],updatedAtMs:Date.now()},{merge:true});
-        tx.update(userRef,{rankRewardBalanceUsd:increment(Number(level.rewardUsd))});
+        const snap = await tx.get(claimsRef);
+        const d = snap.exists() ? snap.data() : { seasonId: rankSeason.id, claimedKeys: [] };
+        const claimed = d.seasonId === rankSeason.id && Array.isArray(d.claimedKeys) ? d.claimedKeys : [];
+        if (claimed.includes(rankKey)) throw new Error('already_claimed');
+
+        // Claim is atomic: mark the reward claimed AND add it to the user's
+        // real wallet (Winning Balance, which is part of the main balance).
+        // rankRewardBalanceUsd is kept as a separate reward-history total.
+        tx.set(claimsRef, {
+          seasonId: rankSeason.id,
+          claimedKeys: [...claimed, rankKey],
+          updatedAtMs: Date.now()
+        }, { merge: true });
+        tx.set(userRef, {
+          winningBalance: increment(rewardAmount),
+          rankRewardBalanceUsd: increment(rewardAmount),
+          updatedAtMs: Date.now()
+        }, { merge: true });
       });
       playUiSound('rank');
-      showToast(`🏆 $${level.rewardUsd} reward claim hoyeche!`);
+      showToast(`🏆 Reward claim hoyeche! ৳${rewardAmount} main balance e add hoyeche.`);
     } catch(e) {
+      console.error('Rank reward claim error:', e);
       showToast(e?.message==='already_claimed'?'Ei reward already claim kora hoyeche.':'Reward claim failed.');
     }
   };
@@ -4009,6 +4090,39 @@ ${buildUserContextBrief(uid)}`;
                     <p className="text-[10px] text-cyan-400 mt-1">Ends: {rankSeason.endMs ? new Date(rankSeason.endMs).toLocaleString() : '—'}</p>
                   </div>
                   <button onClick={async()=>{const start=Date.now();const end=new Date(start);end.setMonth(end.getMonth()+2);const data={id:`season_${start}`,startMs:start,endMs:end.getTime(),createdAtMs:start,manual:true};await setDoc(doc(db,'appData','playerRankSeason'),data,{merge:true});showToast('New 2-month season set kora hoyeche.');}} className="w-full py-2.5 bg-violet-600 text-white rounded-xl text-xs font-black">START NEW 2-MONTH SEASON NOW</button>
+
+                  <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} border ${t.border} rounded-2xl p-3 space-y-3`}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-black flex items-center gap-1.5"><ImageIcon className="w-4 h-4 text-cyan-400" />Rank Badge Image Management</p>
+                        <p className="text-[9px] text-slate-500 mt-1">Prottek rank-er nijer image upload korun. Upload korlei Firestore-e save hobe ebong user profile-e live update hobe.</p>
+                      </div>
+                      <span className="text-[9px] text-cyan-400 font-bold">{(rankConfig.levels || []).filter(x=>x.badgeUrl).length}/{(rankConfig.levels || []).length}</span>
+                    </div>
+                    <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                      {(rankConfig.levels || []).map((lvl, idx) => {
+                        const badgeKey = `${lvl.name}_${lvl.level || ''}`;
+                        const badgeSrc = getRankBadgeSrc(lvl);
+                        return (
+                          <div key={badgeKey + idx} className="flex items-center gap-2 rounded-xl border border-white/5 bg-black/20 p-2">
+                            <div className="w-14 h-12 rounded-lg bg-black/30 border border-white/5 flex items-center justify-center overflow-hidden shrink-0">
+                              <img src={badgeSrc} alt="" className="w-full h-full object-contain" loading="lazy" onError={(e)=>{if(e.currentTarget.src!==RANK_BADGES.bronze)e.currentTarget.src=RANK_BADGES.bronze;}} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[11px] font-black truncate">{lvl.name}{lvl.level ? ` ${lvl.level}` : ''}</p>
+                              <p className="text-[9px] text-slate-500">{lvl.badgeUrl ? 'Custom badge uploaded' : 'Default badge'}</p>
+                            </div>
+                            <label className={`px-2.5 py-2 rounded-lg text-[9px] font-black cursor-pointer ${rankBadgeUploadingKey===badgeKey ? 'bg-slate-700 text-slate-400' : 'bg-indigo-600 text-white'}`}>
+                              {rankBadgeUploadingKey===badgeKey ? 'UPLOADING...' : 'UPLOAD'}
+                              <input type="file" accept="image/*" className="hidden" disabled={rankBadgeUploadingKey===badgeKey} onChange={e=>{const f=e.target.files?.[0]; if(f) handleRankBadgeUpload(idx,f); e.target.value='';}} />
+                            </label>
+                            {lvl.badgeUrl && <button onClick={()=>handleRankBadgeClear(idx)} className="p-2 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20" title="Remove custom badge"><Trash2 className="w-3.5 h-3.5" /></button>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                     {(rankConfig.levels || []).map((lvl, idx) => (
                       <div key={idx} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-2 grid grid-cols-[1fr_70px_70px_auto] gap-2 items-center`}>
@@ -4020,7 +4134,7 @@ ${buildUserContextBrief(uid)}`;
                     ))}
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => setRankConfig(prev => ({ ...prev, levels: [...prev.levels, { name:'Master', level:'I', min: (Math.max(...prev.levels.map(x=>Number(x.min)||0),0)+100) }] }))} className={`py-2 ${t.input} border rounded-xl text-xs font-bold`}>+ Add Rank Level</button>
+                    <button onClick={() => setRankConfig(prev => ({ ...prev, levels: [...prev.levels, { name:'Master', level:'I', min: (Math.max(...prev.levels.map(x=>Number(x.min)||0),0)+100), rewardUsd: 0, badgeUrl: '' }] }))} className={`py-2 ${t.input} border rounded-xl text-xs font-bold`}>+ Add Rank Level</button>
                     <button onClick={async () => { try { await setDoc(doc(db,'appData','playerRankConfig'), rankConfig); playUiSound('success'); showToast('Rank rules save hoyeche!'); } catch(e) { showToast('Rank config save failed: '+e.message); } }} className="py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold">SAVE RANK RULES</button>
                   </div>
                 </div>
