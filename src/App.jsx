@@ -512,6 +512,9 @@ export default function App() {
   const [showRankDetails, setShowRankDetails] = useState(false);
   const [showPlayerDetails, setShowPlayerDetails] = useState(false);
   const [achievementConfig, setAchievementConfig] = useState(DEFAULT_ACHIEVEMENT_CONFIG);
+  const [achievementIconOverrides, setAchievementIconOverrides] = useState({});
+  const [rankBadgeOverrides, setRankBadgeOverrides] = useState({});
+  const [achievementIconUploadingKey, setAchievementIconUploadingKey] = useState('');
   const [playerStatAdjustments, setPlayerStatAdjustments] = useState({});
   const [adminPlayerSystemSearch, setAdminPlayerSystemSearch] = useState('');
   const [adminPlayerSystemUid, setAdminPlayerSystemUid] = useState('');
@@ -719,6 +722,24 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'rankBadgeImages'), (snap) => {
+      const obj = {};
+      snap.docs.forEach(d => { const x = d.data() || {}; if (x.url) obj[d.id] = x.url; });
+      setRankBadgeOverrides(obj);
+    }, (err) => console.error('Rank badge override sync error:', err));
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'achievementIconImages'), (snap) => {
+      const obj = {};
+      snap.docs.forEach(d => { const x = d.data() || {}; if (x.url) obj[d.id] = x.url; });
+      setAchievementIconOverrides(obj);
+    }, (err) => console.error('Achievement icon override sync error:', err));
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
     const unsub = onSnapshot(collection(db, 'playerStatAdjustments'), (snap) => {
       const obj = {};
       snap.docs.forEach(d => { obj[d.id] = d.data(); });
@@ -920,9 +941,36 @@ export default function App() {
   // Resolve the badge from the live admin-managed rank configuration first.
   // This means a rank image uploaded in Player System immediately becomes the
   // image used everywhere the current rank is rendered.
+  const normalizeRankAssetKey = (name, level='') =>
+    `${String(name || 'rank').trim()}_${String(level || 'base').trim()}`.toLowerCase().replace(/\s+/g, '_');
+
+  // Small compressed Firestore fallback. This keeps image upload working even if
+  // Firebase Storage rules/permissions are not configured yet.
+  const imageFileToDataUrl = (file, maxSide = 420, quality = 0.82) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error('File read failed'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Image decode failed'));
+      img.onload = () => {
+        const scale = Math.min(1, maxSide / Math.max(img.width || 1, img.height || 1));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round((img.width || 1) * scale));
+        canvas.height = Math.max(1, Math.round((img.height || 1) * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('Canvas unavailable'));
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
   const getRankBadgeSrc = (rank) => {
     const name = String(rank?.name || 'Bronze').trim();
     const level = String(rank?.level || '').trim();
+    const overrideKey = normalizeRankAssetKey(name, level);
     const normalized = name.toLowerCase().replace(/\s+/g, '_');
     const exactKey = `${normalized}_${level.toLowerCase()}`.replace(/_+$/,'');
     const tier = normalized.replace(/_(?:i|ii|iii|iv)$/i, '');
@@ -930,48 +978,49 @@ export default function App() {
       String(x.name || '').trim().toLowerCase() === name.toLowerCase() &&
       String(x.level || '').trim().toLowerCase() === level.toLowerCase()
     );
-    return configured?.badgeUrl || rank?.badgeUrl || RANK_BADGES[exactKey] || RANK_BADGES[normalized] || RANK_BADGES[tier] || RANK_BADGES.bronze;
+    return rankBadgeOverrides[overrideKey] || configured?.badgeUrl || rank?.badgeUrl || RANK_BADGES[exactKey] || RANK_BADGES[normalized] || RANK_BADGES[tier] || RANK_BADGES.bronze;
+  };
+
+  const getAchievementIconSrc = (a) => {
+    if (!a) return '';
+    return achievementIconOverrides[String(a.id || '').trim()] || a.iconUrl || '';
   };
 
   const handleRankBadgeUpload = async (levelIndex, file) => {
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      showToast('Rank badge er jonno shudhu image upload korun.');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      showToast('Rank image 5MB er moddhe rakhun.');
-      return;
-    }
-
+    if (!file.type.startsWith('image/')) { showToast('Rank badge er jonno shudhu image upload korun.'); return; }
+    if (file.size > 10 * 1024 * 1024) { showToast('Rank image 10MB er moddhe rakhun.'); return; }
     const level = (rankConfig.levels || [])[levelIndex];
     if (!level) return;
-    const key = `${level.name}_${level.level || ''}`;
+    const key = normalizeRankAssetKey(level.name, level.level);
     setRankBadgeUploadingKey(key);
     try {
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`;
-      const fileRef = storageRef(getStorage(), `rank-badges/${uniqueName}`);
-      const snapshot = await uploadBytes(fileRef, file, {
-        contentType: file.type,
-        cacheControl: 'public,max-age=31536000',
-      });
-      const url = await getDownloadURL(snapshot.ref);
+      let url = '';
+      try {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`;
+        const fileRef = storageRef(getStorage(), `rank-badges/${uniqueName}`);
+        const snapshot = await uploadBytes(fileRef, file, { contentType: file.type, cacheControl: 'public,max-age=31536000' });
+        url = await getDownloadURL(snapshot.ref);
+      } catch (storageErr) {
+        console.warn('Rank badge Storage upload failed; using Firestore image fallback.', storageErr);
+        url = await imageFileToDataUrl(file);
+        await setDoc(doc(db, 'rankBadgeImages', key), { url, rankName: level.name, level: level.level || '', updatedAtMs: Date.now(), updatedBy: user.uid });
+      }
       const next = {
         ...rankConfig,
-        levels: (rankConfig.levels || []).map((x, i) => i === levelIndex ? { ...x, badgeUrl: url, badgeUpdatedAtMs: Date.now() } : x),
+        levels: (rankConfig.levels || []).map((x, i) => i === levelIndex ? { ...x, badgeUrl: url.startsWith('data:') ? '' : url, badgeUpdatedAtMs: Date.now() } : x),
       };
-      await setDoc(doc(db, 'appData', 'playerRankConfig'), next, { merge: true });
+      if (!url.startsWith('data:')) await setDoc(doc(db, 'appData', 'playerRankConfig'), next, { merge: true });
       setRankConfig(next);
+      setRankBadgeOverrides(prev => ({ ...prev, [key]: url }));
       playUiSound('success');
-      showToast(`${level.name}${level.level ? ` ${level.level}` : ''} badge upload & save hoyeche.`);
+      showToast(`${level.name}${level.level ? ` ${level.level}` : ''} badge live upload hoyeche.`);
     } catch (e) {
       console.error('Rank badge upload error:', e);
       const code = e?.code ? ` [${e.code}]` : '';
       showToast(`Rank badge upload failed${code}: ${e?.message || 'Unknown error'}`);
-    } finally {
-      setRankBadgeUploadingKey('');
-    }
+    } finally { setRankBadgeUploadingKey(''); }
   };
 
   const handleRankBadgeClear = async (levelIndex) => {
@@ -983,11 +1032,45 @@ export default function App() {
         levels: (rankConfig.levels || []).map((x, i) => i === levelIndex ? { ...x, badgeUrl: '' } : x),
       };
       await setDoc(doc(db, 'appData', 'playerRankConfig'), next, { merge: true });
+      await deleteDoc(doc(db, 'rankBadgeImages', key)).catch(() => {});
       setRankConfig(next);
+      setRankBadgeOverrides(prev => { const n = { ...prev }; delete n[key]; return n; });
       showToast('Rank badge remove hoyeche.');
     } catch (e) {
       showToast(`Badge remove failed: ${e?.message || 'Unknown error'}`);
     }
+  };
+
+  const handleAchievementIconUpload = async (achievementIndex, file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { showToast('Achievement icon-er jonno image upload korun.'); return; }
+    if (file.size > 10 * 1024 * 1024) { showToast('Achievement icon 10MB er moddhe rakhun.'); return; }
+    const a = (achievementConfig || [])[achievementIndex];
+    if (!a?.id) return;
+    const key = String(a.id).trim();
+    setAchievementIconUploadingKey(key);
+    try {
+      let url = '';
+      try {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`;
+        const fileRef = storageRef(getStorage(), `achievement-icons/${uniqueName}`);
+        const snapshot = await uploadBytes(fileRef, file, { contentType: file.type, cacheControl: 'public,max-age=31536000' });
+        url = await getDownloadURL(snapshot.ref);
+      } catch (storageErr) {
+        console.warn('Achievement icon Storage upload failed; using Firestore image fallback.', storageErr);
+        url = await imageFileToDataUrl(file);
+        await setDoc(doc(db, 'achievementIconImages', key), { url, achievementId: key, updatedAtMs: Date.now(), updatedBy: user.uid });
+      }
+      setAchievementConfig(prev => prev.map((x, i) => i === achievementIndex ? { ...x, iconUrl: url.startsWith('data:') ? '' : url } : x));
+      setAchievementIconOverrides(prev => ({ ...prev, [key]: url }));
+      playUiSound('success');
+      showToast(`${a.name} icon live upload hoyeche.`);
+    } catch (e) {
+      console.error('Achievement icon upload error:', e);
+      const code = e?.code ? ` [${e.code}]` : '';
+      showToast(`Achievement icon upload failed${code}: ${e?.message || 'Unknown error'}`);
+    } finally { setAchievementIconUploadingKey(''); }
   };
 
   const getRankRewardLevels = () => (rankConfig.levels || []).filter(x=>Number(x.rewardUsd || 0)>0);
@@ -1021,6 +1104,8 @@ export default function App() {
           updatedAtMs: Date.now()
         }, { merge: true });
       });
+      setUser(prev => ({ ...prev, winningBalance: Number(prev.winningBalance || 0) + rewardAmount, rankRewardBalanceUsd: Number(prev.rankRewardBalanceUsd || 0) + rewardAmount }));
+      setRegisteredUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, winningBalance: Number(u.winningBalance || 0) + rewardAmount, rankRewardBalanceUsd: Number(u.rankRewardBalanceUsd || 0) + rewardAmount } : u));
       playUiSound('rank');
       showToast(`🏆 Reward claim hoyeche! ৳${rewardAmount} main balance e add hoyeche.`);
     } catch(e) {
@@ -4097,7 +4182,7 @@ ${buildUserContextBrief(uid)}`;
                         <p className="text-xs font-black flex items-center gap-1.5"><ImageIcon className="w-4 h-4 text-cyan-400" />Rank Badge Image Management</p>
                         <p className="text-[9px] text-slate-500 mt-1">Prottek rank-er nijer image upload korun. Upload korlei Firestore-e save hobe ebong user profile-e live update hobe.</p>
                       </div>
-                      <span className="text-[9px] text-cyan-400 font-bold">{(rankConfig.levels || []).filter(x=>x.badgeUrl).length}/{(rankConfig.levels || []).length}</span>
+                      <span className="text-[9px] text-cyan-400 font-bold">{(rankConfig.levels || []).filter(x=>x.badgeUrl || rankBadgeOverrides[normalizeRankAssetKey(x.name,x.level)]).length}/{(rankConfig.levels || []).length}</span>
                     </div>
                     <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
                       {(rankConfig.levels || []).map((lvl, idx) => {
@@ -4125,10 +4210,11 @@ ${buildUserContextBrief(uid)}`;
 
                   <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                     {(rankConfig.levels || []).map((lvl, idx) => (
-                      <div key={idx} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-2 grid grid-cols-[1fr_70px_70px_auto] gap-2 items-center`}>
-                        <input value={lvl.name} onChange={e => setRankConfig(prev => ({ ...prev, levels: prev.levels.map((x,i)=>i===idx?{...x,name:e.target.value}:x) }))} className={`${t.input} border p-2 rounded-lg text-xs`} />
-                        <input value={lvl.level} onChange={e => setRankConfig(prev => ({ ...prev, levels: prev.levels.map((x,i)=>i===idx?{...x,level:e.target.value}:x) }))} className={`${t.input} border p-2 rounded-lg text-xs`} />
-                        <input type="number" value={lvl.min} onChange={e => setRankConfig(prev => ({ ...prev, levels: prev.levels.map((x,i)=>i===idx?{...x,min:Number(e.target.value)}:x) }))} className={`${t.input} border p-2 rounded-lg text-xs`} />
+                      <div key={idx} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-2 grid grid-cols-[1fr_60px_72px_82px_auto] gap-2 items-center`}>
+                        <input value={lvl.name} onChange={e => setRankConfig(prev => ({ ...prev, levels: prev.levels.map((x,i)=>i===idx?{...x,name:e.target.value}:x) }))} className={`${t.input} border p-2 rounded-lg text-xs`} placeholder="Rank" />
+                        <input value={lvl.level} onChange={e => setRankConfig(prev => ({ ...prev, levels: prev.levels.map((x,i)=>i===idx?{...x,level:e.target.value}:x) }))} className={`${t.input} border p-2 rounded-lg text-xs`} placeholder="I" />
+                        <input type="number" value={lvl.min ?? 0} onChange={e => setRankConfig(prev => ({ ...prev, levels: prev.levels.map((x,i)=>i===idx?{...x,min:Number(e.target.value)}:x) }))} className={`${t.input} border p-2 rounded-lg text-xs`} title="Minimum RP" />
+                        <input type="number" min="0" step="0.01" value={lvl.rewardUsd ?? 0} onChange={e => setRankConfig(prev => ({ ...prev, levels: prev.levels.map((x,i)=>i===idx?{...x,rewardUsd:Number(e.target.value)}:x) }))} className={`${t.input} border p-2 rounded-lg text-xs text-amber-300`} title="Reward amount" />
                         <button onClick={() => setRankConfig(prev => ({ ...prev, levels: prev.levels.filter((_,i)=>i!==idx) }))} className="text-red-400 text-xs">×</button>
                       </div>
                     ))}
@@ -4143,8 +4229,16 @@ ${buildUserContextBrief(uid)}`;
                   <p className="text-xs font-black flex items-center space-x-1.5"><span>🏅</span><span>Achievement Configuration</span></p>
                   {(achievementConfig || []).map((a, idx) => (
                     <div key={a.id || idx} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-2`}>
-                      <div className="grid grid-cols-[48px_1fr_70px] gap-2">
-                        <input value={a.icon || ''} onChange={e => setAchievementConfig(prev => prev.map((x,i)=>i===idx?{...x,icon:e.target.value}:x))} className={`${t.input} border p-2 rounded-lg text-center`} />
+                      <div className="grid grid-cols-[64px_1fr_70px] gap-2 items-center">
+                        <div className="relative">
+                          <div className={`${t.input} border rounded-lg w-16 h-16 flex items-center justify-center overflow-hidden text-xl`}>
+                            {getAchievementIconSrc(a) ? <img src={getAchievementIconSrc(a)} className="w-full h-full object-contain" alt="" /> : <span>{a.icon || '🏅'}</span>}
+                          </div>
+                          <label className={`absolute -bottom-1 -right-1 px-1.5 py-1 rounded-md text-[8px] font-black cursor-pointer ${achievementIconUploadingKey===String(a.id) ? 'bg-slate-700 text-slate-300' : 'bg-indigo-600 text-white'}`}>
+                            {achievementIconUploadingKey===String(a.id) ? '...' : 'UPLOAD'}
+                            <input type="file" accept="image/*" className="hidden" disabled={achievementIconUploadingKey===String(a.id)} onChange={e=>{const f=e.target.files?.[0]; if(f) handleAchievementIconUpload(idx,f); e.target.value='';}} />
+                          </label>
+                        </div>
                         <input value={a.name || ''} onChange={e => setAchievementConfig(prev => prev.map((x,i)=>i===idx?{...x,name:e.target.value}:x))} className={`${t.input} border p-2 rounded-lg text-xs`} />
                         <input type="number" value={a.threshold ?? 0} onChange={e => setAchievementConfig(prev => prev.map((x,i)=>i===idx?{...x,threshold:Number(e.target.value)}:x))} className={`${t.input} border p-2 rounded-lg text-xs`} />
                       </div>
@@ -5234,6 +5328,9 @@ ${buildUserContextBrief(uid)}`;
                       <span className="text-xs font-black text-cyan-300">{rank.name}{rank.level ? ` ${rank.level}` : ''}</span>
                       <span className="text-[9px] text-slate-500">{rank.score} RP</span><span className="text-[9px] text-indigo-300">ⓘ</span>
                     </button>
+                    <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-pink-500/10 border border-pink-400/20 text-pink-300">
+                      <span className="text-[11px]">❤️</span><span className="text-[9px] font-black">{profileLikes[user.uid] || 0} Likes</span>
+                    </div>
                   </div>
                   <button onClick={openProfileSettings} className="p-2.5 bg-white/5 border border-white/10 rounded-xl flex-shrink-0"><Edit3 className="w-4 h-4 text-indigo-300" /></button>
                 </div>
@@ -5432,11 +5529,11 @@ ${buildUserContextBrief(uid)}`;
           <div className={`${t.card} w-full max-w-md max-h-[92vh] overflow-y-auto rounded-3xl border ${t.border} p-4 space-y-4`} onClick={e=>e.stopPropagation()}>
             <div className="flex items-center justify-between"><p className="text-xs font-black">PLAYER PROFILE</p><button onClick={()=>setPublicProfileUid(null)}><X className="w-5 h-5 text-slate-400"/></button></div>
             <div className="rounded-3xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950 via-slate-950 to-violet-950 p-5">
-              <div className="flex items-center gap-3"><div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 overflow-hidden flex items-center justify-center text-white text-xl font-black">{p.avatar?<img src={p.avatar} className="w-full h-full object-cover" alt=""/>:(p.name||'U').charAt(0)}</div><div className="flex-1 min-w-0"><p className="text-[9px] text-cyan-300 font-black tracking-widest">UR FF TOUR</p><h2 className="font-black text-lg truncate">{p.name}</h2><p className="text-[10px] text-slate-400 font-mono">UID: {p.uid}</p><p className="text-[9px] text-slate-500 font-mono">FF UID: {p.ffUid || '—'}</p><button onClick={()=>setShowRankDetails(true)} className="text-xs text-cyan-300 font-black mt-1 flex items-center gap-1.5"><img src={getRankBadgeSrc(ri)} className="w-8 h-6 object-contain rounded" alt=""/>{ri.name}{ri.level ? ` ${ri.level}` : ''} • {ri.score} RP ⓘ</button></div>{p.uid!==user.uid&&<button onClick={()=>toggleProfileLike(p.uid)} className={`px-3 py-2 rounded-xl text-xs font-black border ${liked?'bg-pink-500/15 border-pink-500/40 text-pink-300':'bg-white/5 border-white/10 text-slate-300'}`}>❤️ {profileLikes[p.uid]||0}</button>}</div>
+              <div className="flex items-center gap-3"><div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 overflow-hidden flex items-center justify-center text-white text-xl font-black">{p.avatar?<img src={p.avatar} className="w-full h-full object-cover" alt=""/>:(p.name||'U').charAt(0)}</div><div className="flex-1 min-w-0"><p className="text-[9px] text-cyan-300 font-black tracking-widest">UR FF TOUR</p><h2 className="font-black text-lg truncate">{p.name}</h2><p className="text-[10px] text-slate-400 font-mono">UID: {p.uid}</p><p className="text-[9px] text-slate-500 font-mono">FF UID: {p.ffUid || '—'}</p><button onClick={()=>setShowRankDetails(true)} className="text-xs text-cyan-300 font-black mt-1 flex items-center gap-1.5"><img src={getRankBadgeSrc(ri)} className="w-8 h-6 object-contain rounded" alt=""/>{ri.name}{ri.level ? ` ${ri.level}` : ''} • {ri.score} RP ⓘ</button></div>{p.uid!==user.uid&&<button onClick={()=>toggleProfileLike(p.uid)} className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[10px] font-black border transition-all active:scale-95 ${liked?'bg-pink-500/15 border-pink-500/40 text-pink-300':'bg-white/5 border-white/10 text-slate-300'}`}>❤️ <span>{profileLikes[p.uid]||0}</span><span>{liked?'LIKED':'LIKE'}</span></button>}</div>
               <div className="grid grid-cols-4 gap-2 mt-4">{[['🏆',st.wins],['🔥',st.kills],['🎮',st.matches],['💰',`৳${st.winnings}`]].map(([i,v])=><div key={String(i)} className="bg-black/20 rounded-xl p-2 text-center"><div>{i}</div><b className="text-xs">{v}</b></div>)}</div>
             </div>
             <div className={`${t.card} border ${t.border} rounded-2xl p-4`}><div className="grid grid-cols-2 gap-2">{[['Leaderboard',`#${pos||'—'}`],['Likes',profileLikes[p.uid]||0],['Matches',st.matches],['Winnings',`৳${st.winnings}`]].map(([k,v])=><div key={k} className={`${darkMode?'bg-slate-950':'bg-slate-100'} rounded-xl p-3`}><p className="text-[9px] text-slate-500">{k}</p><p className="font-black text-sm mt-1">{v}</p></div>)}</div></div>
-            <div className={`${t.card} border ${t.border} rounded-2xl p-4`}><p className="text-xs font-black mb-3">Achievements</p><div className="grid grid-cols-2 gap-2">{ach.map(a=><div key={a.id} className={`rounded-xl p-2 border ${a.unlocked?'border-amber-400/30':'border-slate-800 opacity-45'}`}><span className="text-lg">{a.icon}</span><p className="text-[10px] font-bold">{a.name}</p></div>)}</div></div>
+            <div className={`${t.card} border ${t.border} rounded-2xl p-4`}><p className="text-xs font-black mb-3">Achievements</p><div className="grid grid-cols-2 gap-2">{ach.map(a=><div key={a.id} className={`rounded-xl p-2 border ${a.unlocked?'border-amber-400/30':'border-slate-800 opacity-45'}`}><div className="w-9 h-9 flex items-center justify-center">{getAchievementIconSrc(a) ? <img src={getAchievementIconSrc(a)} className="w-full h-full object-contain" alt="" /> : <span className="text-lg">{a.icon}</span>}</div><p className="text-[10px] font-bold">{a.name}</p></div>)}</div></div>
             <div className={`${t.card} border ${t.border} rounded-2xl p-4`}><p className="text-xs font-black mb-3">Tournament History</p><div className="space-y-2">{hist.length===0?<p className="text-[10px] text-slate-500">No tournament history yet.</p>:hist.slice(0,20).map(({match,result})=><div key={match.id} className={`${darkMode?'bg-slate-950':'bg-slate-100'} rounded-xl p-3`}><div className="flex justify-between gap-2"><p className="text-xs font-bold truncate">{match.title}</p><span className="text-[9px] text-slate-500">{result?'Completed':'Joined'}</span></div><p className="text-[9px] text-slate-500 mt-1">{match.time || '—'} • {result?`Rank #${result.rank} • ${result.points||0} kills/points • ৳${result.prize||0}`:'Result pending'}</p></div>)}</div></div>
           </div>
         </div>;
