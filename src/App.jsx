@@ -995,23 +995,25 @@ export default function App() {
     const key = normalizeRankAssetKey(level.name, level.level);
     setRankBadgeUploadingKey(key);
     try {
-      let url = '';
-      try {
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-        const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`;
-        const fileRef = storageRef(getStorage(), `rank-badges/${uniqueName}`);
-        const snapshot = await uploadBytes(fileRef, file, { contentType: file.type, cacheControl: 'public,max-age=31536000' });
-        url = await getDownloadURL(snapshot.ref);
-      } catch (storageErr) {
-        console.warn('Rank badge Storage upload failed; using Firestore image fallback.', storageErr);
-        url = await imageFileToDataUrl(file);
-        await setDoc(doc(db, 'rankBadgeImages', key), { url, rankName: level.name, level: level.level || '', updatedAtMs: Date.now(), updatedBy: user.uid });
-      }
+      // Store the optimized image directly in Firestore. This avoids Firebase
+      // Storage permission/bucket issues and onSnapshot makes the change live
+      // for every user without refresh.
+      const url = await imageFileToDataUrl(file, 360, 0.78);
+      await setDoc(doc(db, 'rankBadgeImages', key), {
+        url,
+        rankName: level.name,
+        level: level.level || '',
+        updatedAtMs: Date.now(),
+        updatedBy: user.uid,
+      }, { merge: true });
+
       const next = {
         ...rankConfig,
-        levels: (rankConfig.levels || []).map((x, i) => i === levelIndex ? { ...x, badgeUrl: url.startsWith('data:') ? '' : url, badgeUpdatedAtMs: Date.now() } : x),
+        levels: (rankConfig.levels || []).map((x, i) => i === levelIndex ? { ...x, badgeUrl: '', badgeUpdatedAtMs: Date.now() } : x),
       };
-      if (!url.startsWith('data:')) await setDoc(doc(db, 'appData', 'playerRankConfig'), next, { merge: true });
+      // Keep rank rules/thresholds in sync; the actual image is read from the
+      // rankBadgeImages live collection above.
+      await setDoc(doc(db, 'appData', 'playerRankConfig'), next, { merge: true });
       setRankConfig(next);
       setRankBadgeOverrides(prev => ({ ...prev, [key]: url }));
       playUiSound('success');
@@ -1026,6 +1028,7 @@ export default function App() {
   const handleRankBadgeClear = async (levelIndex) => {
     const level = (rankConfig.levels || [])[levelIndex];
     if (!level) return;
+    const key = normalizeRankAssetKey(level.name, level.level);
     try {
       const next = {
         ...rankConfig,
@@ -1050,19 +1053,17 @@ export default function App() {
     const key = String(a.id).trim();
     setAchievementIconUploadingKey(key);
     try {
-      let url = '';
-      try {
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-        const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`;
-        const fileRef = storageRef(getStorage(), `achievement-icons/${uniqueName}`);
-        const snapshot = await uploadBytes(fileRef, file, { contentType: file.type, cacheControl: 'public,max-age=31536000' });
-        url = await getDownloadURL(snapshot.ref);
-      } catch (storageErr) {
-        console.warn('Achievement icon Storage upload failed; using Firestore image fallback.', storageErr);
-        url = await imageFileToDataUrl(file);
-        await setDoc(doc(db, 'achievementIconImages', key), { url, achievementId: key, updatedAtMs: Date.now(), updatedBy: user.uid });
-      }
-      setAchievementConfig(prev => prev.map((x, i) => i === achievementIndex ? { ...x, iconUrl: url.startsWith('data:') ? '' : url } : x));
+      // Same reliable Firestore image path as rank badges. The icon is resized
+      // before saving, then the live collection listener updates every client.
+      const url = await imageFileToDataUrl(file, 240, 0.78);
+      await setDoc(doc(db, 'achievementIconImages', key), {
+        url,
+        achievementId: key,
+        updatedAtMs: Date.now(),
+        updatedBy: user.uid,
+      }, { merge: true });
+
+      setAchievementConfig(prev => prev.map((x, i) => i === achievementIndex ? { ...x, iconUrl: '' } : x));
       setAchievementIconOverrides(prev => ({ ...prev, [key]: url }));
       playUiSound('success');
       showToast(`${a.name} icon live upload hoyeche.`);
