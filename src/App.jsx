@@ -1237,6 +1237,142 @@ export default function App() {
     }
   }, [walletAction, paymentMethodsConfig]);
 
+  // ---------------------------------------------------------------------------
+  // MOBILE / BROWSER SYSTEM-BACK NAVIGATION
+  // ---------------------------------------------------------------------------
+  // This is the web equivalent of Android's OnBackPressedDispatcher for this
+  // React/Vite app. A single history guard entry lets the phone/browser back
+  // button close the top-most modal/detail screen first instead of leaving the
+  // app immediately. Internal buttons continue to work exactly as before.
+  const systemBackReadyRef = useRef(false);
+  const handlingSystemBackRef = useRef(false);
+
+  const handleSystemBack = () => {
+    // Close the deepest/top-most UI layer first.
+    if (showRankDetails) { setShowRankDetails(false); return true; }
+    if (showPlayerDetails) { setShowPlayerDetails(false); return true; }
+    if (publicProfileUid) { setPublicProfileUid(null); return true; }
+    if (showPlayerSearch) { setShowPlayerSearch(false); return true; }
+    if (showNotifications) { setShowNotifications(false); return true; }
+    if (showCheckInModal) { setShowCheckInModal(false); return true; }
+    if (showJoinModal) { setShowJoinModal(false); return true; }
+    if (showHistory) { setShowHistory(false); return true; }
+    if (showMyOrders) { setShowMyOrders(false); return true; }
+    if (showBalanceShare) { setShowBalanceShare(false); return true; }
+    if (showInviteFriends) { setShowInviteFriends(false); return true; }
+    if (showAppDeveloper) { setShowAppDeveloper(false); return true; }
+    if (showAskProblem) { setShowAskProblem(false); return true; }
+    if (showProfileSettings) { setShowProfileSettings(false); return true; }
+    if (showAllResults) { setShowAllResults(false); return true; }
+    if (showLeaderboard) { setShowLeaderboard(false); return true; }
+    if (walletAction) { setWalletAction(null); return true; }
+    if (selectedProduct) { setSelectedProduct(null); return true; }
+    if (rejectModalData) { setRejectModalData(null); setRejectionReason(''); return true; }
+    if (matchResultsModal) { setMatchResultsModal(null); return true; }
+
+    // Match/category/detail pages.
+    if (matchDetailView) {
+      setMatchDetailView(null);
+      return true;
+    }
+    if (selectedCategoryView) {
+      setSelectedCategoryView(null);
+      return true;
+    }
+
+    // Admin sub-pages / nested views.
+    if (roomIdMatchView) { setRoomIdMatchView(null); return true; }
+    if (roomIdCategoryView) { setRoomIdCategoryView(null); return true; }
+    if (adminPlayersCategoryView) { setAdminPlayersCategoryView(null); return true; }
+    if (adminResultsCategoryView) { setAdminResultsCategoryView(null); return true; }
+    if (expandedMatchId) { setExpandedMatchId(null); return true; }
+
+    // Admin panel -> Profile, then normal app root.
+    if (activeTab === 'admin') {
+      if (isAdminAuthenticated) {
+        setIsAdminAuthenticated(false);
+        setActiveTab('profile');
+      } else {
+        setActiveTab('profile');
+      }
+      return true;
+    }
+
+    // Any normal app tab -> Home. Home is the root screen; a second back from
+    // there is allowed to leave the web app/browser normally.
+    if (activeTab !== 'home' && activeTab !== 'login') {
+      setActiveTab('home');
+      return true;
+    }
+
+    return false;
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    // Keep one guarded history entry while the app is open. This gives Android
+    // Chrome/PWA/browser back a popstate event that React can handle.
+    if (!systemBackReadyRef.current) {
+      try {
+        window.history.pushState({ __urffBackGuard: true }, '', window.location.href);
+        systemBackReadyRef.current = true;
+      } catch {
+        // History API may be unavailable in a restricted embedded viewer.
+      }
+    }
+
+    const onPopState = () => {
+      if (handlingSystemBackRef.current) return;
+
+      const handled = handleSystemBack();
+      if (handled) {
+        // Immediately restore the guard entry so another system-back press can
+        // close the next layer instead of exiting the app.
+        handlingSystemBackRef.current = true;
+        try {
+          window.history.pushState({ __urffBackGuard: true }, '', window.location.href);
+        } catch {}
+        window.setTimeout(() => {
+          handlingSystemBackRef.current = false;
+        }, 0);
+      }
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  // handleSystemBack intentionally reads the latest React state from this
+  // effect's dependency list so every modal/page is handled correctly.
+  }, [
+    showRankDetails, showPlayerDetails, publicProfileUid, showPlayerSearch,
+    showNotifications, showCheckInModal, showJoinModal, showHistory, showMyOrders,
+    showBalanceShare, showInviteFriends, showAppDeveloper, showAskProblem,
+    showProfileSettings, showAllResults, showLeaderboard, walletAction,
+    selectedProduct, rejectModalData, matchResultsModal, matchDetailView,
+    selectedCategoryView, roomIdMatchView, roomIdCategoryView,
+    adminPlayersCategoryView, adminResultsCategoryView, expandedMatchId,
+    activeTab, isAdminAuthenticated
+  ]);
+
+  // Also support the physical keyboard Escape key on desktop browsers.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key !== 'Escape') return;
+      handleSystemBack();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    showRankDetails, showPlayerDetails, publicProfileUid, showPlayerSearch,
+    showNotifications, showCheckInModal, showJoinModal, showHistory, showMyOrders,
+    showBalanceShare, showInviteFriends, showAppDeveloper, showAskProblem,
+    showProfileSettings, showAllResults, showLeaderboard, walletAction,
+    selectedProduct, rejectModalData, matchResultsModal, matchDetailView,
+    selectedCategoryView, roomIdMatchView, roomIdCategoryView,
+    adminPlayersCategoryView, adminResultsCategoryView, expandedMatchId,
+    activeTab, isAdminAuthenticated
+  ]);
+
   // Lock background scroll whenever any full-screen modal/sheet is open. Without this,
   // on some mobile/embedded viewers the page behind a "fixed" overlay can still scroll,
   // which drags the modal's own header out of view and makes it look like there's no
@@ -6356,4 +6492,3 @@ ${buildUserContextBrief(uid)}`;
     </div>
   );
 }
-
