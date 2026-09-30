@@ -1645,66 +1645,95 @@ const [loginPassword, setLoginPassword] = useState('');
     return () => unsub();
   }, []);
 
-  const handleRegister = () => {
-    if (!regUsername || !regNumber || !regPassword || !regGmail) {
-      showToast('Shob field puron korun');
-      return;
-    }
-    const accountsWithNumber = registeredUsers.filter(u => u.number === regNumber);
+ const handleRegister = async () => {
+  if (!regUsername || !regNumber || !regPassword || !regGmail) {
+    showToast('Shob field puron korun');
+    return;
+  }
+
+  const email = regGmail.trim().toLowerCase();
+  const number = regNumber.trim();
+
+  try {
+    // Keep your existing business rule:
+    // maximum 3 accounts for one phone number.
+    const accountsWithNumber = registeredUsers.filter(
+      u => u.number === number
+    );
+
     if (accountsWithNumber.length >= 3) {
       showToast('Ei number diye maximum 3 ti account khola jabe!');
       return;
     }
-    // No two accounts anywhere may share the same password — this also guarantees the
-    // (max 3) accounts under one phone number never end up with matching passwords.
-    if (registeredUsers.some(u => u.password === regPassword)) {
-      showToast('Ei password already onno ekta account e use hoyeche. Onno password din.');
-      return;
-    }
+
+    // Create the real Firebase Authentication account.
+    const userCredential = await createUserWithEmailAndPassword(
+      auth,
+      email,
+      regPassword
+    );
+
+    const firebaseUser = userCredential.user;
 
     const newUserObj = {
-      number: regNumber,
-      password: regPassword,
-      name: regUsername,
-      email: regGmail,
-      uid: 'GM' + Math.floor(1000 + Math.random() * 9000),
+      number,
+      name: regUsername.trim(),
+      email,
+      uid: firebaseUser.uid,
       avatar: '',
-      depositBalance: 0.00,
-      winningBalance: 5.00,
-      totalDeposited: 0.00,
-      totalWithdrawn: 0.00
+      depositBalance: 0,
+      winningBalance: 5,
+      totalDeposited: 0,
+      totalWithdrawn: 0,
+      role: 'user',
+      createdAt: Date.now()
     };
 
-    setRegisteredUsers([...registeredUsers, newUserObj]);
-    setDoc(doc(db, 'users', newUserObj.uid), newUserObj).catch(err => console.error('Failed to save user:', err));
-        const newLoggedInUser = {
-      name: regUsername,
-      number: regNumber,
-      email: regGmail,
-      uid: newUserObj.uid,
-      avatar: '',
-      depositBalance: 0.00,
-      winningBalance: 5.00,
-      totalDeposited: 0.00,
-      totalWithdrawn: 0.00
-    };
-    setUser(newLoggedInUser);
+    // Save profile using Firebase Auth UID as Firestore document ID.
+    await setDoc(
+      doc(db, 'users', firebaseUser.uid),
+      newUserObj
+    );
+
+    setUser(newUserObj);
     setHasActiveSession(true);
-    localStorage.setItem('urff_session', JSON.stringify(newLoggedInUser));
+    setActiveTab('home');
 
-    const refCode = regReferralCode.trim();
-    if (refCode && refCode !== newUserObj.uid) {
-      const referrer = registeredUsers.find(u => u.uid === refCode);
-      if (referrer) {
-        setRegisteredUsers(prev => prev.map(u => u.uid === refCode ? { ...u, winningBalance: (u.winningBalance || 0) + INVITE_BONUS } : u));
-        setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Invite Bonus! 🎉', message: `${regUsername} apnar referral code diye register korechen. Apni ৳${INVITE_BONUS} bonus peyechen.`, time: 'Just now', targetUid: refCode }, ...prev]);
-      }
-    }
+    setRegUsername('');
+    setRegNumber('');
+    setRegPassword('');
+    setRegGmail('');
     setRegReferralCode('');
 
-    showToast('Registration successful! Apnar account e ৳5 bonus jog kora hoyeche.');
-    setActiveTab('home');
-  };
+    showToast(
+      'Registration successful! Apnar account e ৳5 bonus jog kora hoyeche.'
+    );
+
+  } catch (error) {
+    console.error('Registration error:', error);
+
+    switch (error.code) {
+      case 'auth/email-already-in-use':
+        showToast('Ei email diye already account ache.');
+        break;
+
+      case 'auth/invalid-email':
+        showToast('Email address thik nei.');
+        break;
+
+      case 'auth/weak-password':
+        showToast('Password aro strong korun.');
+        break;
+
+      case 'auth/operation-not-allowed':
+        showToast('Firebase Email/Password Authentication enabled nei.');
+        break;
+
+      default:
+        showToast('Registration failed: ' + error.message);
+    }
+  }
+};
 
   const handleLogin = () => {
     const found = registeredUsers.find(u => u.number === loginNumber && u.password === loginPassword);
