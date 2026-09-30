@@ -1838,14 +1838,22 @@ const [loginPassword, setLoginPassword] = useState('');
   }
 };
 
-   const handleLogout = () => {
-    localStorage.removeItem('urff_session');
+   const handleLogout = async () => {
+  try {
+    await signOut(auth);
+
     setIsAdminAuthenticated(false);
-    setLoginNumber('');
+    setLoginEmail('');
     setLoginPassword('');
+    setHasActiveSession(false);
     setActiveTab('login');
+
     showToast('Logout successful!');
-  };
+  } catch (error) {
+    console.error('Logout error:', error);
+    showToast('Logout failed.');
+  }
+};
 
   // Force-logout immediately when the current account is banned and show a dedicated
   // full-screen ban notice. The ban data comes from Firestore's live users snapshot.
