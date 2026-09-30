@@ -74,7 +74,42 @@ export default function App() {
     const splashTimer = window.setTimeout(() => setShowSplash(false), 5000);
     return () => window.clearTimeout(splashTimer);
   }, []);
+useEffect(() => {
+  const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    if (!firebaseUser) {
+      setHasActiveSession(false);
+      setActiveTab('login');
+      return;
+    }
 
+    try {
+      const userRef = doc(db, 'users', firebaseUser.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (userSnap.exists()) {
+        const profile = userSnap.data();
+
+        setUser({
+          ...profile,
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || profile.email || ''
+        });
+
+        setHasActiveSession(true);
+        setActiveTab('home');
+      } else {
+        console.error('Firestore profile not found for Auth UID:', firebaseUser.uid);
+        showToast('User profile paoa jayni.');
+        await signOut(auth);
+      }
+    } catch (error) {
+      console.error('Auth profile load error:', error);
+      showToast('Account data load korte problem hoyeche.');
+    }
+  });
+
+  return () => unsubscribe();
+}, []);
  
   const tourFileInputRef = useRef(null);
   const categoryFileInputRef = useRef(null);
