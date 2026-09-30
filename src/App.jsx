@@ -104,8 +104,8 @@ export default function App() {
   const [regPassword, setRegPassword] = useState('');
   const [regGmail, setRegGmail] = useState('');
 
-  const [loginNumber, setLoginNumber] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
+ const [loginEmail, setLoginEmail] = useState('');
+const [loginPassword, setLoginPassword] = useState('');
 
   // User & Wallet Data
   const [user, setUser] = useState({
