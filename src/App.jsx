@@ -7,7 +7,19 @@ import {
 import { db, auth, messaging } from './firebase';
 import { getToken } from 'firebase/messaging';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { collection, doc, getDocs, setDoc, updateDoc, increment, deleteDoc, addDoc, onSnapshot, runTransaction } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  increment,
+  deleteDoc,
+  addDoc,
+  onSnapshot,
+  runTransaction
+} from 'firebase/firestore';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
