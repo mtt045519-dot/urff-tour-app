@@ -75,19 +75,7 @@ export default function App() {
     return () => window.clearTimeout(splashTimer);
   }, []);
 
-  useEffect(() => {
-    const savedSession = localStorage.getItem('urff_session');
-    if (savedSession) {
-      try {
-        const parsed = JSON.parse(savedSession);
-        setUser(parsed);
-        setHasActiveSession(true);
-        setActiveTab('home');
-      } catch (e) {
-        localStorage.removeItem('urff_session');
-      }
-    }
-  }, []);
+ 
   const tourFileInputRef = useRef(null);
   const categoryFileInputRef = useRef(null);
   const shopFileInputRef = useRef(null);
