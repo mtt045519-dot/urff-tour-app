@@ -4,7 +4,7 @@ import {
   Wallet, Plus, Minus, CheckCircle, Share2, History, Settings, Globe, Moon, Sun,
   Gamepad2, Shield, AlertCircle, Copy, Check, Lock, Send, Bot, Power, Trash2, Edit3, Image as ImageIcon, CheckCircle2, XCircle, Bell, Home, Users, Crosshair, MapPin, Clock, Upload, Camera, Save, Search, Ban
 } from 'lucide-react';
-import { db, messaging } from './firebase';
+import { db, auth, messaging } from './firebase';
 import { getToken } from 'firebase/messaging';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { collection, doc, getDocs, setDoc, updateDoc, increment, deleteDoc, addDoc, onSnapshot, runTransaction } from 'firebase/firestore';
