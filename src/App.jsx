@@ -1735,37 +1735,108 @@ const [loginPassword, setLoginPassword] = useState('');
   }
 };
 
-  const handleLogin = () => {
-    const found = registeredUsers.find(u => u.number === loginNumber && u.password === loginPassword);
-    if (found) {
-      const now = Date.now();
-      if (found.banUntil === 'permanent' || (typeof found.banUntil === 'number' && found.banUntil > now)) {
-        const untilText = found.banUntil === 'permanent'
-          ? 'permanently'
-          : `until ${new Date(found.banUntil).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true })}`;
-        showToast(`Apnar account ${untilText} ban kora hoyeche.${found.banReason ? ' Karon: ' + found.banReason : ''}`);
-        return;
-      }
-            const loggedInUser = {
-        name: found.name,
-        number: found.number,
-        email: found.email,
-        uid: found.uid,
-        avatar: found.avatar || '',
-        depositBalance: found.depositBalance || 0,
-        winningBalance: found.winningBalance || 0,
-        totalDeposited: found.totalDeposited || 0,
-        totalWithdrawn: found.totalWithdrawn || 0
-      };
-      setUser(loggedInUser);
-      setHasActiveSession(true);
-      localStorage.setItem('urff_session', JSON.stringify(loggedInUser));
-      showToast('Login successful!');
-      setActiveTab('home');
-    } else {
-      showToast('Bhul number ba password!');
+  const handleLogin = async () => {
+  const email = loginEmail.trim().toLowerCase();
+
+  if (!email || !loginPassword) {
+    showToast('Email ebong password din.');
+    return;
+  }
+
+  try {
+    const userCredential = await signInWithEmailAndPassword(
+      auth,
+      email,
+      loginPassword
+    );
+
+    const firebaseUser = userCredential.user;
+
+    const userSnap = await getDoc(
+      doc(db, 'users', firebaseUser.uid)
+    );
+
+    if (!userSnap.exists()) {
+      showToast('User profile paoa jayni.');
+      await signOut(auth);
+      return;
     }
-  };
+
+    const profile = userSnap.data();
+
+    const now = Date.now();
+
+    if (
+      profile.banUntil === 'permanent' ||
+      (
+        typeof profile.banUntil === 'number' &&
+        profile.banUntil > now
+      )
+    ) {
+      const untilText =
+        profile.banUntil === 'permanent'
+          ? 'permanently'
+          : `until ${new Date(profile.banUntil).toLocaleString(
+              'en-US',
+              {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true
+              }
+            )}`;
+
+      showToast(
+        `Apnar account ${untilText} ban kora hoyeche.${
+          profile.banReason
+            ? ' Karon: ' + profile.banReason
+            : ''
+        }`
+      );
+
+      await signOut(auth);
+      return;
+    }
+
+    setUser({
+      ...profile,
+      uid: firebaseUser.uid,
+      email: firebaseUser.email || profile.email || ''
+    });
+
+    setHasActiveSession(true);
+    setActiveTab('home');
+
+    setLoginEmail('');
+    setLoginPassword('');
+
+    showToast('Login successful!');
+
+  } catch (error) {
+    console.error('Login error:', error);
+
+    switch (error.code) {
+      case 'auth/invalid-credential':
+      case 'auth/wrong-password':
+      case 'auth/user-not-found':
+        showToast('Email ba password vul.');
+        break;
+
+      case 'auth/invalid-email':
+        showToast('Email address thik nei.');
+        break;
+
+      case 'auth/user-disabled':
+        showToast('Ei account Firebase theke disabled.');
+        break;
+
+      default:
+        showToast('Login failed: ' + error.message);
+    }
+  }
+};
 
    const handleLogout = () => {
     localStorage.removeItem('urff_session');
