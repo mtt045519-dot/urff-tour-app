@@ -3311,16 +3311,17 @@ ${buildUserContextBrief(uid)}`;
 
           {activeTab === 'login' ? (
             <div className="space-y-4">
-              <div>
-                <label className="text-xs text-slate-400">Phone Number</label>
-                <input
-                  type="text"
-                  value={loginNumber}
-                  onChange={(e) => setLoginNumber(e.target.value)}
-                  placeholder="017XXXXXXXX"
-                  className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs text-white mt-1"
-                />
-              </div>
+            <div>
+  <label className="text-xs text-slate-400">Email Address</label>
+  <input
+    type="email"
+    value={loginEmail}
+    onChange={(e) => setLoginEmail(e.target.value)}
+    placeholder="Email address"
+    autoComplete="email"
+    className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs text-white mt-1"
+  />
+</div>
               <div>
                 <label className="text-xs text-slate-400">Password</label>
                 <input
