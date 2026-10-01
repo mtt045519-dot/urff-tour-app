@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import './index.css'
+import { authReady } from './firebase.js'
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -25,10 +26,23 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+const root = ReactDOM.createRoot(document.getElementById('root'));
+const mount = () => root.render(
   <React.StrictMode>
     <ErrorBoundary>
       <App />
     </ErrorBoundary>
   </React.StrictMode>,
-)
+);
+
+authReady.then(mount).catch((err) => {
+  root.render(
+    <div style={{ padding: 20, fontFamily: 'sans-serif', color: '#fff', background: '#111', minHeight: '100vh' }}>
+      <h2>Connection error</h2>
+      <p>Firebase Authentication-e connect kora jacche na.</p>
+      <p style={{ fontSize: 12, opacity: 0.7 }}>{err && err.code ? err.code : String(err)}</p>
+      <p style={{ fontSize: 12, opacity: 0.7 }}>Firebase Console &gt; Authentication &gt; Sign-in method e "Anonymous" enable ache kina check korun.</p>
+    </div>
+  );
+});
+
