@@ -6,6 +6,145 @@ import {
 } from 'lucide-react';
 import { db, messaging, auth } from './firebase';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+
+// ---------- Sound engine ----------
+// Each event has its own short melody. Playback uses WebAudio when the AudioContext is
+// running; otherwise (locked / suspended / unsupported, common in mobile WebViews) the same
+// melody is played through a generated WAV file with a normal <audio> element.
+let _sfxEnabled = true;
+let _audioCtx = null;
+let _lastSfxAt = 0;
+// notes: [frequency, startOffsetSec, durationSec, waveType, volume]
+const SFX = {
+  click:    [[700, 0, 0.05, 'triangle', 0.6]],
+  success:  [[523, 0, 0.12, 'sine', 0.8], [659, 0.1, 0.12, 'sine', 0.8], [784, 0.2, 0.24, 'sine', 0.8]],
+  error:    [[240, 0, 0.16, 'sawtooth', 0.5], [170, 0.15, 0.26, 'sawtooth', 0.5]],
+  like:     [[880, 0, 0.07, 'sine', 0.8], [1175, 0.07, 0.14, 'sine', 0.8]],
+  rank:     [[523, 0, 0.12, 'triangle', 0.8], [659, 0.12, 0.12, 'triangle', 0.8], [784, 0.24, 0.12, 'triangle', 0.8], [1047, 0.36, 0.4, 'triangle', 0.85]],
+  coin:     [[988, 0, 0.08, 'square', 0.4], [1319, 0.08, 0.3, 'square', 0.4]],
+  notify:   [[880, 0, 0.14, 'sine', 0.8], [660, 0.16, 0.24, 'sine', 0.8]],
+  join:     [[440, 0, 0.1, 'triangle', 0.8], [554, 0.09, 0.1, 'triangle', 0.8], [660, 0.18, 0.1, 'triangle', 0.8], [880, 0.27, 0.25, 'triangle', 0.8]],
+  login:    [[392, 0, 0.1, 'sine', 0.8], [523, 0.1, 0.1, 'sine', 0.8], [659, 0.2, 0.22, 'sine', 0.8]],
+  logout:   [[659, 0, 0.1, 'sine', 0.8], [523, 0.1, 0.1, 'sine', 0.8], [392, 0.2, 0.22, 'sine', 0.8]],
+  send:     [[700, 0, 0.05, 'sine', 0.7], [950, 0.05, 0.09, 'sine', 0.7]],
+  warn:     [[300, 0, 0.12, 'square', 0.35], [300, 0.18, 0.12, 'square', 0.35], [300, 0.36, 0.22, 'square', 0.35]],
+  order:    [[392, 0, 0.08, 'square', 0.35], [523, 0.08, 0.08, 'square', 0.35], [659, 0.16, 0.08, 'square', 0.35], [1047, 0.24, 0.25, 'square', 0.35]],
+  approve:  [[587, 0, 0.1, 'triangle', 0.8], [880, 0.1, 0.1, 'triangle', 0.8], [1175, 0.2, 0.3, 'triangle', 0.8]],
+};
+const _getCtx = () => {
+  if (typeof window === 'undefined') return null;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  if (!_audioCtx) { try { _audioCtx = new AC(); } catch { return null; } }
+  return _audioCtx;
+};
+const _unlockAudio = () => {
+  try {
+    const c = _getCtx();
+    if (!c) return;
+    if (c.state !== 'running') c.resume();
+    // Play one silent sample inside the user gesture so iOS/Android actually unlock audio.
+    const b = c.createBuffer(1, 1, 22050);
+    const src = c.createBufferSource();
+    src.buffer = b; src.connect(c.destination); src.start(0);
+  } catch {}
+};
+if (typeof window !== 'undefined') {
+  ['pointerdown', 'touchstart', 'touchend', 'click', 'keydown'].forEach(ev => window.addEventListener(ev, _unlockAudio, { passive: true }));
+}
+const _waveSample = (type, phase) => {
+  if (type === 'square') return phase < 0.5 ? 1 : -1;
+  if (type === 'sawtooth') return 2 * phase - 1;
+  if (type === 'triangle') return 4 * Math.abs(phase - 0.5) - 1;
+  return Math.sin(2 * Math.PI * phase);
+};
+const _wavCache = {};
+const _buildWavUrl = (kind) => {
+  if (_wavCache[kind]) return _wavCache[kind];
+  const notes = SFX[kind] || SFX.click;
+  const rate = 22050;
+  const total = Math.max(...notes.map(n => n[1] + n[2])) + 0.05;
+  const len = Math.floor(total * rate);
+  const mix = new Float32Array(len);
+  notes.forEach(([freq, start, dur, type, vol]) => {
+    const i0 = Math.floor(start * rate);
+    const n = Math.floor(dur * rate);
+    for (let i = 0; i < n && i0 + i < len; i++) {
+      const t = i / rate;
+      const attack = Math.min(1, t / 0.008);
+      const decay = Math.pow(Math.max(0, 1 - t / dur), 1.6);
+      mix[i0 + i] += _waveSample(type, (freq * t) % 1) * vol * attack * decay * 0.7;
+    }
+  });
+  const buf = new ArrayBuffer(44 + len * 2);
+  const v = new DataView(buf);
+  const wr = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+  wr(0, 'RIFF'); v.setUint32(4, 36 + len * 2, true); wr(8, 'WAVE'); wr(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  wr(36, 'data'); v.setUint32(40, len * 2, true);
+  for (let i = 0; i < len; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, mix[i])) * 32767, true);
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  _wavCache[kind] = 'data:audio/wav;base64,' + btoa(bin);
+  return _wavCache[kind];
+};
+const _playViaAudioTag = (kind) => {
+  try {
+    const a = new Audio(_buildWavUrl(kind));
+    a.volume = 1;
+    const pr = a.play();
+    if (pr && pr.catch) pr.catch(() => {});
+  } catch {}
+};
+const _playViaWebAudio = (ctx, kind) => {
+  const notes = SFX[kind] || SFX.click;
+  const t0 = ctx.currentTime + 0.01;
+  const master = ctx.createGain();
+  master.gain.value = 0.9;
+  master.connect(ctx.destination);
+  notes.forEach(([freq, start, dur, type, vol]) => {
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0 + start);
+    g.gain.setValueAtTime(0.0001, t0 + start);
+    g.gain.exponentialRampToValueAtTime(vol, t0 + start + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
+    osc.connect(g); g.connect(master);
+    osc.start(t0 + start);
+    osc.stop(t0 + start + dur + 0.02);
+  });
+};
+const playSound = (kind = 'click') => {
+  if (!_sfxEnabled) return;
+  try {
+    if (!SFX[kind]) kind = 'click';
+    const nowMs = Date.now();
+    // A feedback sound that fires right after another one (e.g. success sound + toast) is skipped.
+    if (kind !== 'click') {
+      if (nowMs - _lastSfxAt < 350) return;
+      _lastSfxAt = nowMs;
+    }
+    const ctx = _getCtx();
+    if (ctx && ctx.state === 'running') {
+      _playViaWebAudio(ctx, kind);
+    } else {
+      // Context still locked/suspended: try to wake it for next time and play via <audio> now.
+      try { if (ctx) ctx.resume(); } catch {}
+      _playViaAudioTag(kind);
+    }
+  } catch {}
+};
+// Every button press in the app gets a small click sound.
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (e) => {
+    const el = e.target && e.target.closest ? e.target.closest('button, [role="button"]') : null;
+    if (el && !el.disabled) playSound('click');
+  }, true);
+}
+
 import { getToken } from 'firebase/messaging';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { collection, doc, getDocs, setDoc, updateDoc, increment, deleteDoc, addDoc, onSnapshot, runTransaction } from 'firebase/firestore';
@@ -100,6 +239,7 @@ export default function App() {
   const [regPassword, setRegPassword] = useState('');
   const [regGmail, setRegGmail] = useState('');
   const [regGoogle, setRegGoogle] = useState(null); // { uid, email } after Google verification
+  const [nowTick, setNowTick] = useState(Date.now()); // clock tick so timed bans expire on their own
 
   const [loginNumber, setLoginNumber] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -235,7 +375,16 @@ export default function App() {
     { image: '', mediaType: 'image', title: 'Win Big in Free Fire Tournaments!', subtitle: 'Join now & compete with the best' },
     { image: '', mediaType: 'image', title: '', subtitle: '' },
     { image: '', mediaType: 'image', title: '', subtitle: '' },
+    { image: '', mediaType: 'image', title: '', subtitle: '' },
+    { image: '', mediaType: 'image', title: '', subtitle: '' },
+    { image: '', mediaType: 'image', title: '', subtitle: '' },
   ]);
+  // Always keep exactly 6 banner slots, even if the saved Firestore list has only 3.
+  const padBanners = (list) => {
+    const arr = Array.isArray(list) ? list.slice(0, 6) : [];
+    while (arr.length < 6) arr.push({ image: '', mediaType: 'image', title: '', subtitle: '' });
+    return arr;
+  };
   const saveBannersToFirestore = async (nextList) => {
     // Save the complete banner list as one Firestore document so every client
     // receives the same state through the onSnapshot listener.
@@ -257,7 +406,7 @@ export default function App() {
   };
    useEffect(() => {
     const unsub = onSnapshot(doc(db, 'appData', 'banners'), (docSnap) => {
-      if (docSnap.exists()) _setBanners(docSnap.data().list);
+      if (docSnap.exists()) _setBanners(padBanners(docSnap.data().list));
     }, (err) => console.error('Banner sync error:', err));
     return () => unsub();
   }, []);
@@ -426,6 +575,26 @@ export default function App() {
   // Admin Panel State
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  // Deposits tab is protected by its own password, asked every time the tab is opened.
+  const [depositUnlocked, setDepositUnlocked] = useState(false);
+  const [depositPwInput, setDepositPwInput] = useState('');
+  const DEPOSIT_PW_HASH = 'c0e863570e4ca8fa3281c9916adbbbc7a754539da129366ff1ef57331e8aaa08';
+  const handleDepositUnlock = async () => {
+    try {
+      const bytes = new TextEncoder().encode(depositPwInput);
+      const buf = await crypto.subtle.digest('SHA-256', bytes);
+      const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+      if (hex === DEPOSIT_PW_HASH) {
+        setDepositUnlocked(true);
+        setDepositPwInput('');
+        playSound('login');
+      } else {
+        showToast('Bhul password!');
+      }
+    } catch (e) {
+      showToast('Password check fail hoyeche. Abar chesta korun.');
+    }
+  };
     const [remoteAdminPassword, setRemoteAdminPassword] = useState(null);
   useEffect(() => {
     getDocs(collection(db, 'appData')).then(snap => {
@@ -817,33 +986,38 @@ export default function App() {
       .sort((a, b) => b[leaderboardMetric] - a[leaderboardMetric])
       .slice(0, 50);
   };
+  useEffect(() => { _sfxEnabled = soundEffectsEnabled; }, [soundEffectsEnabled]);
+
+  // Play the notification sound when a NEW notification for this user arrives
+  // (ignored during the first seconds after app start, while old ones load).
+  const _notifSeenRef = useRef(null);
+  const _notifMountAtRef = useRef(Date.now());
+  useEffect(() => {
+    const ids = new Set(userNotifications.map(n => String(n.id)));
+    if (_notifSeenRef.current === null || Date.now() - _notifMountAtRef.current < 4000) {
+      _notifSeenRef.current = ids;
+      return;
+    }
+    const fresh = userNotifications.some(n =>
+      !_notifSeenRef.current.has(String(n.id)) && (!n.targetUid || n.targetUid === 'all' || n.targetUid === user.uid)
+    );
+    _notifSeenRef.current = ids;
+    if (fresh && hasActiveSession) playSound('notify');
+  }, [userNotifications]);
+
+  // Toast messages also get a matching sound (error / success) unless another sound just played.
   const showToast = (msg) => {
+    try {
+      const m = String(msg || '');
+      if (/(bhul|fail|error|invalid|insufficient|not enough|already|puron korun|dite hobe|paoa jayni|maximum|minimum|wrong|ban kora hoyeche\.)/i.test(m)) playSound('error');
+      else if (/(successful|success|hoyeche|korechen|peyechen|jog kora)/i.test(m)) playSound('success');
+    } catch {}
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
 
-  const playUiSound = (kind = 'click') => {
-    if (!soundEffectsEnabled || typeof window === 'undefined') return;
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      const now = ctx.currentTime;
-      const freq = kind === 'success' ? 720 : kind === 'like' ? 520 : kind === 'rank' ? 880 : 420;
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, now);
-      osc.frequency.exponentialRampToValueAtTime(Math.max(220, freq * 0.72), now + 0.08);
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.045, now + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.start(now); osc.stop(now + 0.1);
-      setTimeout(() => ctx.close().catch(() => {}), 180);
-    } catch {}
-  };
+  const playUiSound = (kind = 'click') => { playSound(kind); };
 
   const getPlayerStats = (uid, period = 'alltime') => {
     const now = Date.now();
@@ -1738,6 +1912,10 @@ export default function App() {
         showToast(`Apnar account ${untilText} ban kora hoyeche.${found.banReason ? ' Karon: ' + found.banReason : ''}`);
         return;
       }
+      // A timed ban that has already ended is cleared automatically.
+      if (typeof found.banUntil === 'number' && found.banUntil <= now) {
+        updateDoc(doc(db, 'users', found.uid), { banUntil: null, banReason: '' }).catch(e => console.error(e));
+      }
             const loggedInUser = {
         name: found.name,
         number: found.number,
@@ -1752,6 +1930,7 @@ export default function App() {
       setUser(loggedInUser);
       setHasActiveSession(true);
       localStorage.setItem('urff_session', JSON.stringify(loggedInUser));
+      playSound('login');
       showToast('Login successful!');
       setActiveTab('home');
     } else {
@@ -1765,8 +1944,23 @@ export default function App() {
     setLoginNumber('');
     setLoginPassword('');
     setActiveTab('login');
+    playSound('logout');
     showToast('Logout successful!');
   };
+
+  // Clock tick every 30s: lets timed bans expire automatically (ban screen closes,
+  // admin list refreshes) without the person having to reload the app.
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  // When a timed ban runs out while the ban screen is open, close it so the person can log in again.
+  useEffect(() => {
+    if (banScreenData && typeof banScreenData.banUntil === 'number' && banScreenData.banUntil <= nowTick) {
+      setBanScreenData(null);
+    }
+  }, [nowTick, banScreenData]);
 
   // Force-logout immediately when the current account is banned and show a dedicated
   // full-screen ban notice. The ban data comes from Firestore's live users snapshot.
@@ -1786,7 +1980,7 @@ export default function App() {
     } else if (banScreenData) {
       setBanScreenData(null);
     }
-  }, [registeredUsers, user.uid, activeTab, hasActiveSession]);
+  }, [registeredUsers, user.uid, activeTab, hasActiveSession, nowTick]);
 
   const handleCheckIn = () => {
     const hoursSince = (Date.now() - lastCheckInMs) / (1000 * 60 * 60);
@@ -1890,7 +2084,7 @@ export default function App() {
 
       setShowJoinModal(false);
       setJoinTeamEntries([{ ign: '', uid: '' }]);
-      playUiSound('success');
+      playSound('join');
       showToast('Match e sofolbhabe join korechen!');
     }).catch((err) => {
       if (err.message === 'SLOTS_FULL') {
@@ -1918,6 +2112,7 @@ export default function App() {
     setAmountInput('');
     setTrxIdInput('');
     setSenderNumberInput('');
+    playSound('coin');
     showToast('Deposit request admin er kache pathano hoyeche!');
   };
 
@@ -1954,6 +2149,7 @@ export default function App() {
     setWalletAction(null);
     setAmountInput('');
     setWithdrawAccountInput('');
+    playSound('coin');
     showToast('Withdraw request admin er kache pathano hoyeche!');
   };
 
@@ -2029,6 +2225,7 @@ export default function App() {
       status: 'pending',
       rejectReason: '',
     }, ...pendingShopOrders]);
+    playSound('order');
     showToast(isCOD ? `Delivery charge ৳${appSettings.codCharge} deduct hoyeche. Baki ৳${subtotal} cash e dite hobe.` : 'Order admin er kache pathano hoyeche! Apnar balance theke taka kata hoyeche.');
     setSelectedProduct(null);
     setActiveTab('shop');
@@ -2644,6 +2841,7 @@ export default function App() {
     setPendingDeposits(pendingDeposits.filter(d => d.id !== dep.id));
     deleteDoc(doc(db, 'pendingDeposits', dep.id)).catch(e => console.error(e));
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Deposit Approved', message: `Apnar ${dep.amount} Taka deposit request approve hoyeche.`, time: 'Just now', targetUid: dep.uid }, ...prev]);
+    playSound('approve');
     showToast('Deposit approve kora hoyeche!');
   };
 
@@ -2652,6 +2850,7 @@ export default function App() {
     setPendingWithdrawals(pendingWithdrawals.filter(w => w.id !== wit.id));
     deleteDoc(doc(db, 'pendingWithdrawals', wit.id)).catch(e => console.error(e));
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Withdraw Approved', message: `Apnar ${wit.amount} Taka withdraw request approve hoyeche.`, time: 'Just now', targetUid: wit.uid }, ...prev]);
+    playSound('approve');
     showToast('Withdraw approve kora hoyeche!');
   };
 
@@ -2668,6 +2867,7 @@ export default function App() {
       time: 'Just now',
       targetUid: ord.uid
     }, ...prev]);
+    playSound('approve');
     showToast('Order approve kora hoyeche!');
   };
 
@@ -2789,6 +2989,7 @@ ${buildUserContextBrief(uid)}`;
   const handleSendSupportMessage = () => {
     const text = supportChatInput.trim();
     if (!text) return;
+    playSound('send');
     const uid = user.uid;
     const existing = supportChats[uid] || { messages: [], aiEnabled: true };
     const message = { sender: 'user', text, time: 'Just now', createdAtMs: Date.now() };
@@ -2912,6 +3113,7 @@ ${buildUserContextBrief(uid)}`;
   const handleAdminSendSupportMessage = () => {
     const text = adminSupportInput.trim();
     if (!text || !adminSupportSelectedUid) return;
+    playSound('send');
     const uid = adminSupportSelectedUid;
     appendSupportMessage(uid, { sender: 'admin', text, time: 'Just now', createdAtMs: Date.now() });
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Admin Replied', message: 'Apnar "Ask Your Problem" chat e admin reply diyeche.', time: 'Just now', targetUid: uid }, ...prev]);
@@ -2931,14 +3133,10 @@ ${buildUserContextBrief(uid)}`;
   const handleBanUser = (uid, durationDays) => {
     const banUntil = durationDays === 'permanent' ? 'permanent' : Date.now() + durationDays * 24 * 60 * 60 * 1000;
     const banReason = adminBanReason.trim() || 'Rules violation';
-    const foundUser = registeredUsers.find(u => u.uid === uid);
-    const nextUser = foundUser ? { ...foundUser, banUntil, banReason } : null;
-
     setRegisteredUsers(prev => prev.map(u => u.uid === uid ? { ...u, banUntil, banReason } : u));
-    if (nextUser) {
-      setDoc(doc(db, 'users', uid), nextUser, { merge: true })
-        .catch(e => console.error('Failed to persist ban:', e));
-    }
+    // Only the two ban fields are written, so a ban can never overwrite a user's balance with stale data.
+    updateDoc(doc(db, 'users', uid), { banUntil, banReason })
+      .catch(e => console.error('Failed to persist ban:', e));
     setUserNotifications(prev => [{
       id: 'not_' + Date.now(),
       title: 'Account Banned',
@@ -2949,6 +3147,7 @@ ${buildUserContextBrief(uid)}`;
       targetUid: uid
     }, ...prev]);
     setAdminBanReason('');
+    playSound('warn');
     showToast('User ban kora hoyeche!');
   };
 
@@ -2957,6 +3156,7 @@ ${buildUserContextBrief(uid)}`;
     updateDoc(doc(db, 'users', uid), { banUntil: null, banReason: '' })
       .catch(e => console.error('Failed to persist unban:', e));
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Account Unbanned', message: 'Apnar account abar active kora hoyeche.', time: 'Just now', targetUid: uid }, ...prev]);
+    playSound('success');
     showToast('User unban kora hoyeche!');
   };
 
@@ -3181,7 +3381,13 @@ ${buildUserContextBrief(uid)}`;
 
   if (banScreenData) {
     const permanent = banScreenData.banUntil === 'permanent';
-    const remainingDays = permanent ? null : Math.max(0, Math.ceil((Number(banScreenData.banUntil) - Date.now()) / (24 * 60 * 60 * 1000)));
+    const remainingMs = permanent ? 0 : Math.max(0, Number(banScreenData.banUntil) - Date.now());
+    const remainingDays = Math.floor(remainingMs / 86400000);
+    const remainingHours = Math.floor((remainingMs % 86400000) / 3600000);
+    const remainingMins = Math.ceil((remainingMs % 3600000) / 60000);
+    const remainingText = remainingDays > 0
+      ? `${remainingDays} day${remainingDays === 1 ? '' : 's'} ${remainingHours} hr`
+      : remainingHours > 0 ? `${remainingHours} hr ${remainingMins} min` : `${remainingMins} min`;
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-5 font-sans">
         <div className="w-full max-w-sm rounded-3xl border border-red-500/30 bg-slate-900 p-7 text-center shadow-2xl shadow-red-950/30">
@@ -3193,7 +3399,7 @@ ${buildUserContextBrief(uid)}`;
           <div className="mt-5 rounded-2xl bg-slate-950 border border-slate-800 p-4 text-left space-y-2">
             <div className="flex justify-between gap-4 text-xs"><span className="text-slate-500">Status</span><span className="font-bold text-red-400">{permanent ? 'Permanent' : 'Temporary'}</span></div>
             {!permanent && <div className="flex justify-between gap-4 text-xs"><span className="text-slate-500">Until</span><span className="font-semibold text-right">{new Date(banScreenData.banUntil).toLocaleString()}</span></div>}
-            {!permanent && <div className="flex justify-between gap-4 text-xs"><span className="text-slate-500">Remaining</span><span className="font-black text-amber-300">{remainingDays} day{remainingDays === 1 ? '' : 's'}</span></div>}
+            {!permanent && <div className="flex justify-between gap-4 text-xs"><span className="text-slate-500">Remaining</span><span className="font-black text-amber-300">{remainingText}</span></div>}
             <div className="text-xs"><span className="text-slate-500">Reason</span><p className="mt-1 text-slate-200">{banScreenData.banReason}</p></div>
           </div>
           <button onClick={() => setBanScreenData(null)} className="mt-5 w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold">BACK TO LOGIN</button>
@@ -3897,7 +4103,7 @@ ${buildUserContextBrief(uid)}`;
           {tabs.map(tb => (
             <button
               key={tb.id}
-              onClick={() => { setAdminTab(tb.id); if (tb.id === 'banner') { loadBannerFormFromSlot(editingBannerSlot); setLogoInput(logoUrl); } if (tb.id === 'settings') loadAppSettingsForm(); }}
+              onClick={() => { setDepositUnlocked(false); setDepositPwInput(''); setAdminTab(tb.id); if (tb.id === 'banner') { loadBannerFormFromSlot(editingBannerSlot); setLogoInput(logoUrl); } if (tb.id === 'settings') loadAppSettingsForm(); }}
               className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap border ${adminTab === tb.id ? 'bg-indigo-600 border-indigo-600 text-white' : `${t.card} ${t.border} ${t.sub}`}`}
             >
               <tb.icon className="w-3.5 h-3.5" /><span>{tb.label}</span>
@@ -4699,14 +4905,14 @@ ${buildUserContextBrief(uid)}`;
 
               {/* Banner Carousel Section */}
               <div className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-3`}>
-                <p className="text-xs font-bold flex items-center space-x-1.5"><ImageIcon className="w-4 h-4 text-indigo-400" /><span>Home Banners (max 3, one-by-one carousel)</span></p>
+                <p className="text-xs font-bold flex items-center space-x-1.5"><ImageIcon className="w-4 h-4 text-indigo-400" /><span>Home Banners (max 6, one-by-one carousel)</span></p>
 
-                <div className="flex space-x-2">
-                  {[0, 1, 2].map(idx => (
+                <div className="grid grid-cols-3 gap-2">
+                  {[0, 1, 2, 3, 4, 5].map(idx => (
                     <button
                       key={idx}
                       onClick={() => loadBannerFormFromSlot(idx)}
-                      className={`flex-1 py-2 rounded-xl text-xs font-bold border ${editingBannerSlot === idx ? 'bg-indigo-600 border-indigo-600 text-white' : `${t.input} ${t.sub}`}`}
+                      className={`py-2 rounded-xl text-xs font-bold border ${editingBannerSlot === idx ? 'bg-indigo-600 border-indigo-600 text-white' : `${t.input} ${t.sub}`}`}
                     >
                       Banner {idx + 1}{banners[idx] && (banners[idx].image || banners[idx].title) ? '' : ' (khali)'}
                     </button>
@@ -4761,7 +4967,25 @@ ${buildUserContextBrief(uid)}`;
             </div>
           )}
 
-          {adminTab === 'deposits' && (
+          {adminTab === 'deposits' && !depositUnlocked && (
+            <div className="px-4">
+              <div className={`${t.card} border rounded-2xl p-5 space-y-3 max-w-sm mx-auto mt-4`}>
+                <p className="text-sm font-bold flex items-center space-x-2"><Lock className="w-4 h-4 text-red-400" /><span>Deposits Locked</span></p>
+                <p className="text-xs text-slate-400">Deposit request dekhte password din.</p>
+                <input
+                  type="password"
+                  value={depositPwInput}
+                  onChange={(e) => setDepositPwInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleDepositUnlock(); }}
+                  placeholder="Password"
+                  className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`}
+                />
+                <button onClick={handleDepositUnlock} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">Unlock</button>
+              </div>
+            </div>
+          )}
+
+          {adminTab === 'deposits' && depositUnlocked && (
             <div className="space-y-2">
               {pendingDeposits.length === 0 && <p className="text-xs text-slate-500 text-center py-8">Kono pending deposit nei.</p>}
               {pendingDeposits.map(d => (
