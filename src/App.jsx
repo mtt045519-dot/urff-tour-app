@@ -4,7 +4,8 @@ import {
   Wallet, Plus, Minus, CheckCircle, Share2, History, Settings, Globe, Moon, Sun,
   Gamepad2, Shield, AlertCircle, Copy, Check, Lock, Send, Bot, Power, Trash2, Edit3, Image as ImageIcon, CheckCircle2, XCircle, Bell, Home, Users, Crosshair, MapPin, Clock, Upload, Camera, Save, Search, Ban
 } from 'lucide-react';
-import { db, messaging } from './firebase';
+import { db, messaging, auth } from './firebase';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { getToken } from 'firebase/messaging';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { collection, doc, getDocs, setDoc, updateDoc, increment, deleteDoc, addDoc, onSnapshot, runTransaction } from 'firebase/firestore';
@@ -98,6 +99,7 @@ export default function App() {
   const [regNumber, setRegNumber] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regGmail, setRegGmail] = useState('');
+  const [regGoogle, setRegGoogle] = useState(null); // { uid, email } after Google verification
 
   const [loginNumber, setLoginNumber] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -1605,9 +1607,53 @@ export default function App() {
     return () => unsub();
   }, []);
 
+  // Step 1 of registration: the person must prove they own a Google account.
+  // One Google account can only ever create one app account.
+  const handleGoogleVerify = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, provider);
+      const gUser = result.user;
+      const gEmail = (gUser.email || '').trim();
+      if (!gEmail) {
+        showToast('Google account theke email paoya jayni. Abar chesta korun.');
+        return;
+      }
+      const taken = registeredUsers.some(u =>
+        (u.googleUid && u.googleUid === gUser.uid) ||
+        (u.email || '').trim().toLowerCase() === gEmail.toLowerCase()
+      );
+      if (taken) {
+        setRegGoogle(null);
+        setRegGmail('');
+        showToast('Ei Google account diye age thekei account khola ache. Login korun.');
+        return;
+      }
+      setRegGoogle({ uid: gUser.uid, email: gEmail });
+      setRegGmail(gEmail);
+      showToast('Google verification successful!');
+    } catch (e) {
+      if (e && e.code === 'auth/popup-closed-by-user') return;
+      console.error('Google verify error:', e);
+      showToast('Google verification fail: ' + (e && e.code ? e.code : 'unknown error'));
+    }
+  };
+
   const handleRegister = () => {
-    if (!regUsername || !regNumber || !regPassword || !regGmail) {
+    if (!regGoogle) {
+      showToast('Age "Google diye verify korun" button e click korun.');
+      return;
+    }
+    if (!regUsername || !regNumber || !regPassword) {
       showToast('Shob field puron korun');
+      return;
+    }
+    if (registeredUsers.some(u =>
+      (u.googleUid && u.googleUid === regGoogle.uid) ||
+      (u.email || '').trim().toLowerCase() === regGoogle.email.toLowerCase()
+    )) {
+      showToast('Ei Google account diye age thekei account khola ache.');
       return;
     }
     const accountsWithNumber = registeredUsers.filter(u => u.number === regNumber);
@@ -1626,7 +1672,9 @@ export default function App() {
       number: regNumber,
       password: regPassword,
       name: regUsername,
-      email: regGmail,
+      email: regGoogle.email,
+      googleUid: regGoogle.uid,
+      emailVerified: true,
       uid: 'GM' + Math.floor(1000 + Math.random() * 9000),
       avatar: '',
       depositBalance: 0.00,
@@ -1640,7 +1688,7 @@ export default function App() {
         const newLoggedInUser = {
       name: regUsername,
       number: regNumber,
-      email: regGmail,
+      email: regGoogle.email,
       uid: newUserObj.uid,
       avatar: '',
       depositBalance: 0.00,
@@ -1661,6 +1709,8 @@ export default function App() {
       }
     }
     setRegReferralCode('');
+    setRegGoogle(null);
+    setRegGmail('');
 
     showToast('Registration successful! Apnar account e ৳5 bonus jog kora hoyeche.');
     setActiveTab('home');
@@ -3228,14 +3278,21 @@ ${buildUserContextBrief(uid)}`;
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-400">Gmail Name</label>
-                <input
-                  type="email"
-                  value={regGmail}
-                  onChange={(e) => setRegGmail(e.target.value)}
-                  placeholder="yourname@gmail.com"
-                  className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-white mt-1"
-                />
+                <label className="text-xs text-slate-400">Google Account (required)</label>
+                {regGoogle ? (
+                  <div className="w-full bg-emerald-950 border border-emerald-700 p-2.5 rounded-xl text-xs text-emerald-300 mt-1 flex items-center justify-between">
+                    <span>✔ {regGoogle.email}</span>
+                    <span onClick={() => { setRegGoogle(null); setRegGmail(''); }} className="text-slate-400 underline cursor-pointer">Change</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleGoogleVerify}
+                    className="w-full py-2.5 bg-white text-slate-900 rounded-xl text-xs font-bold mt-1"
+                  >
+                    Google diye verify korun
+                  </button>
+                )}
               </div>
               <div>
                 <label className="text-xs text-slate-400">Referral Code (Optional)</label>
