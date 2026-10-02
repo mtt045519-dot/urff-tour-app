@@ -145,7 +145,18 @@ export default function App() {
   // Load all registered users from Firestore when the app starts
     useEffect(() => {
     const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const usersFromDb = snapshot.docs.map(d => d.data());
+      // Some documents in the users collection can be incomplete (missing name/uid/number).
+      // Skip docs without a uid and fill blank text fields so the UI never crashes on them.
+      const usersFromDb = snapshot.docs
+        .map(d => d.data())
+        .filter(u => u && u.uid)
+        .map(u => ({
+          ...u,
+          uid: String(u.uid),
+          name: String(u.name || 'Unknown'),
+          number: String(u.number || ''),
+          email: String(u.email || ''),
+        }));
       setRegisteredUsers(usersFromDb);
             const myDoc = usersFromDb.find(u => u.uid === user.uid);
       if (myDoc) {
@@ -4223,9 +4234,9 @@ ${buildUserContextBrief(uid)}`;
 
           {adminTab === 'playerdb' && (() => {
             const allPlayers = registeredUsers.filter(u =>
-              u.name.toLowerCase().includes(adminPlayerSearchQuery.trim().toLowerCase()) ||
-              u.uid.toLowerCase().includes(adminPlayerSearchQuery.trim().toLowerCase()) ||
-              u.number.includes(adminPlayerSearchQuery.trim())
+              String(u.name || '').toLowerCase().includes(adminPlayerSearchQuery.trim().toLowerCase()) ||
+              String(u.uid || '').toLowerCase().includes(adminPlayerSearchQuery.trim().toLowerCase()) ||
+              String(u.number || '').includes(adminPlayerSearchQuery.trim())
             );
             return (
               <div className="space-y-3">
@@ -4257,7 +4268,7 @@ ${buildUserContextBrief(uid)}`;
                         <button onClick={() => setExpandedPlayerUid(isOpen ? null : p.uid)} className="w-full flex items-center justify-between p-3">
                           <div className="flex items-center space-x-2 min-w-0">
                             <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center font-black text-white text-xs overflow-hidden flex-shrink-0">
-                              {p.avatar ? <img src={p.avatar} alt="" className="w-full h-full object-cover" /> : p.name.charAt(0)}
+                              {p.avatar ? <img src={p.avatar} alt="" className="w-full h-full object-cover" /> : String(p.name || '?').charAt(0)}
                             </div>
                             <div className="text-left min-w-0">
                               <p className="text-xs font-bold truncate">{p.name} <span className="text-slate-500 font-mono font-normal">({p.uid})</span></p>
@@ -5789,7 +5800,7 @@ ${buildUserContextBrief(uid)}`;
                         {rank === 1 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-lg">👑</span>}
                         <span className={`absolute top-1.5 right-1.5 w-5 h-5 rounded-full ${t.card} border ${ringColor} flex items-center justify-center text-[9px] font-bold ${textColor}`}>#{rank}</span>
                         <div className={`w-12 h-12 rounded-full ${darkMode ? 'bg-slate-800' : 'bg-slate-200'} border-2 ${ringColor} mx-auto flex items-center justify-center font-black text-sm overflow-hidden`}>
-                          {p.avatar ? <img src={p.avatar} alt="" className="w-full h-full object-cover" /> : p.name.charAt(0)}
+                          {p.avatar ? <img src={p.avatar} alt="" className="w-full h-full object-cover" /> : String(p.name || '?').charAt(0)}
                         </div>
                         <p className="text-[11px] font-bold mt-1.5 truncate">{p.name}</p>
                         <p className={`text-sm font-black ${textColor}`}>{metricValue(p)}</p>
@@ -5804,7 +5815,7 @@ ${buildUserContextBrief(uid)}`;
                     <div key={idx} className={`${t.card} border ${t.border} rounded-xl p-3 flex items-center space-x-3`}>
                       <span className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-400 flex-shrink-0">#{idx + 4}</span>
                       <div className={`w-8 h-8 rounded-full ${darkMode ? 'bg-slate-800' : 'bg-slate-200'} flex items-center justify-center font-bold text-xs flex-shrink-0 overflow-hidden`}>
-                        {p.avatar ? <img src={p.avatar} alt="" className="w-full h-full object-cover" /> : p.name.charAt(0)}
+                        {p.avatar ? <img src={p.avatar} alt="" className="w-full h-full object-cover" /> : String(p.name || '?').charAt(0)}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold truncate">{p.name}</p>
