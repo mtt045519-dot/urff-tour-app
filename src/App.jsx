@@ -632,7 +632,13 @@ export default function App() {
   const [newTourPass, setNewTourPass] = useState('');
   const [newTourImage, setNewTourImage] = useState('');
   const [newTourRules, setNewTourRules] = useState('');
-  const [newTourTime, setNewTourTime] = useState('');
+  const nowLocalInput = () => {
+    const d = new Date();
+    d.setSeconds(0, 0);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const [newTourTime, setNewTourTime] = useState(() => nowLocalInput());
   const [newTourCategoryId, setNewTourCategoryId] = useState('cat_br');
   const [newTourMode, setNewTourMode] = useState('SOLO');
 
@@ -1743,6 +1749,26 @@ export default function App() {
     return () => clearInterval(interval);
   }, [automatedTemplates]);
 
+  // When daily automation is active, automated matches from earlier dates are removed
+  // (only matches that already started/finished, so unplayed paid entries are never lost).
+  const _autoDeletedRef = useRef(new Set());
+  useEffect(() => {
+    if (!automatedTemplates.length) return;
+    const tplIds = new Set(automatedTemplates.map(tp => tp.id));
+    const n = new Date();
+    const todayKey = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+    tournaments.forEach(m => {
+      if (!(m.templateId || tplIds.has(m.id))) return;
+      if (!(m.started || m.status === 'completed' || m.status === 'live')) return;
+      const day = m.generatedDate || String(m.time || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day >= todayKey) return;
+      if (_autoDeletedRef.current.has(m.id)) return;
+      _autoDeletedRef.current.add(m.id);
+      deleteDoc(doc(db, 'tournaments', m.id)).catch(e => console.error('Old match delete error:', e));
+      setTournaments(prev => prev.filter(x => x.id !== m.id));
+    });
+  }, [automatedTemplates, tournaments]);
+
   const [shopItems, setShopItems] = useState([
     { id: 'd1', title: '200 Free Fire Like', type: 'like', price: 20, oldPrice: 50, discount: '-60%', image: '🔥' },
     { id: 'd2', title: '25 Diamond', type: 'diamond', price: 28, oldPrice: 40, discount: '-30%', image: '💎' },
@@ -2494,7 +2520,7 @@ export default function App() {
     setNewTourPass('');
     setNewTourImage('');
     setNewTourRules('');
-    setNewTourTime('');
+    setNewTourTime(nowLocalInput());
     setNewTourCategoryId('cat_br');
     setNewTourMode('SOLO');
     setNewTourPrizeTable([
@@ -2989,6 +3015,7 @@ ${buildUserContextBrief(uid)}`;
   const handleSendSupportMessage = () => {
     const text = supportChatInput.trim();
     if (!text) return;
+    if (getSupportBlockInfo(user.uid)) { showToast('Apnar message dewa bondho kora hoyeche. Karon dekhun.'); return; }
     playSound('send');
     const uid = user.uid;
     const existing = supportChats[uid] || { messages: [], aiEnabled: true };
@@ -3015,6 +3042,7 @@ ${buildUserContextBrief(uid)}`;
   };
 
   const handleUserChatImageUpload = (e) => {
+    if (getSupportBlockInfo(user.uid)) { showToast('Apnar message dewa bondho kora hoyeche.'); if (e.target) e.target.value = ''; return; }
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
@@ -3044,6 +3072,7 @@ ${buildUserContextBrief(uid)}`;
   // understand what was said — if that's unavailable, playback still works for humans,
   // and the AI is told the voice note couldn't be transcribed.
   const startVoiceRecording = async (forAdmin) => {
+    if (!forAdmin && getSupportBlockInfo(user.uid)) { showToast('Apnar message dewa bondho kora hoyeche.'); return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream, { audioBitsPerSecond: 32000 });
@@ -3118,6 +3147,43 @@ ${buildUserContextBrief(uid)}`;
     appendSupportMessage(uid, { sender: 'admin', text, time: 'Just now', createdAtMs: Date.now() });
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Admin Replied', message: 'Apnar "Ask Your Problem" chat e admin reply diyeche.', time: 'Just now', targetUid: uid }, ...prev]);
     setAdminSupportInput('');
+  };
+
+  // ---------- Ask Your Problem: admin can block a user from messaging ----------
+  const [supportBlockOpen, setSupportBlockOpen] = useState(false);
+  const [supportBlockDays, setSupportBlockDays] = useState('1');
+  const [supportBlockReason, setSupportBlockReason] = useState('');
+  const getSupportBlockInfo = (uid) => {
+    const b = (supportChats[uid] || {}).supportBlock;
+    if (!b) return null;
+    if (b.until === 'permanent' || (typeof b.until === 'number' && b.until > Date.now())) return b;
+    return null;
+  };
+  const fmtBlockUntil = (until) => until === 'permanent'
+    ? 'Permanent (admin unblock na korle khulbe na)'
+    : new Date(until).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
+  const handleBlockSupport = async (uid) => {
+    const until = supportBlockDays === 'permanent' ? 'permanent' : Date.now() + Number(supportBlockDays) * 24 * 60 * 60 * 1000;
+    const reason = supportBlockReason.trim() || 'Rules violation';
+    const supportBlock = { until, reason, blockedAtMs: Date.now() };
+    _setSupportChats(prev => ({ ...prev, [uid]: { ...(prev[uid] || { messages: [], aiEnabled: true }), supportBlock } }));
+    try {
+      await setDoc(doc(db, 'supportChats', uid), { supportBlock, updatedAtMs: Date.now() }, { merge: true });
+    } catch (e) { console.error('Support block save error:', e); showToast('Block save fail: ' + (e && e.code ? e.code : 'error')); return; }
+    setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Ask Your Problem Closed', message: `Apnar "Ask Your Problem" option bondho kora hoyeche. Karon: ${reason}. ${until === 'permanent' ? 'Permanent.' : 'Khulbe: ' + fmtBlockUntil(until)}`, time: 'Just now', targetUid: uid }, ...prev]);
+    setSupportBlockOpen(false);
+    setSupportBlockReason('');
+    playSound('warn');
+    showToast('User ke Ask Your Problem theke block kora hoyeche.');
+  };
+  const handleUnblockSupport = async (uid) => {
+    _setSupportChats(prev => ({ ...prev, [uid]: { ...(prev[uid] || { messages: [], aiEnabled: true }), supportBlock: null } }));
+    try {
+      await setDoc(doc(db, 'supportChats', uid), { supportBlock: null, updatedAtMs: Date.now() }, { merge: true });
+    } catch (e) { console.error('Support unblock save error:', e); showToast('Unblock save fail: ' + (e && e.code ? e.code : 'error')); return; }
+    setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Ask Your Problem Opened', message: 'Apnar "Ask Your Problem" option abar chalu kora hoyeche.', time: 'Just now', targetUid: uid }, ...prev]);
+    playSound('success');
+    showToast('User ke unblock kora hoyeche. Se abar message dite parbe.');
   };
 
   const toggleAiForThread = async (uid) => {
@@ -4165,7 +4231,14 @@ ${buildUserContextBrief(uid)}`;
 
                 <div>
                   <label className="text-[10px] text-slate-500">Match Date & Time</label>
-                  <input type="datetime-local" value={newTourTime} onChange={(e) => setNewTourTime(e.target.value)} className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1`} />
+                  <input
+                    type="datetime-local"
+                    value={newTourTime}
+                    onChange={(e) => setNewTourTime(e.target.value)}
+                    onClick={(e) => { try { if (e.currentTarget.showPicker) e.currentTarget.showPicker(); } catch {} }}
+                    className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1`}
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">Tap kore date/time bodlan. Default: ekhonkar shomoy.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -5208,6 +5281,42 @@ ${buildUserContextBrief(uid)}`;
                         AI Auto-Reply: {(selectedThread.aiEnabled !== false) ? 'ON' : 'OFF'}
                       </button>
                     </div>
+                    {(() => {
+                      const blockInfo = getSupportBlockInfo(adminSupportSelectedUid);
+                      return (
+                        <div className="px-3 py-2 border-b border-slate-800/50 flex-shrink-0 space-y-2">
+                          {blockInfo ? (
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-[10px] text-red-400 min-w-0">
+                                <p className="font-bold">BLOCKED: {fmtBlockUntil(blockInfo.until)}</p>
+                                <p className="truncate">Karon: {blockInfo.reason}</p>
+                              </div>
+                              <button onClick={() => handleUnblockSupport(adminSupportSelectedUid)} className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-[10px] font-bold flex-shrink-0">Unblock</button>
+                            </div>
+                          ) : (
+                            <button onClick={() => setSupportBlockOpen(o => !o)} className="px-2.5 py-1 bg-red-600/20 text-red-400 border border-red-500/40 rounded-lg text-[10px] font-bold">
+                              {supportBlockOpen ? 'Cancel' : 'Block this user from messaging'}
+                            </button>
+                          )}
+                          {!blockInfo && supportBlockOpen && (
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap gap-1.5">
+                                {[['1', '1 Day'], ['7', '1 Week'], ['15', '15 Days'], ['30', '1 Month'], ['permanent', 'Permanent']].map(([val, label]) => (
+                                  <button key={val} onClick={() => setSupportBlockDays(val)} className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border ${supportBlockDays === val ? 'bg-red-600 border-red-600 text-white' : `${t.input}`}`}>{label}</button>
+                                ))}
+                              </div>
+                              <input
+                                value={supportBlockReason}
+                                onChange={(e) => setSupportBlockReason(e.target.value)}
+                                placeholder="Karon likhun (user dekhte pabe)"
+                                className={`w-full ${t.input} border p-2 rounded-lg text-[11px]`}
+                              />
+                              <button onClick={() => handleBlockSupport(adminSupportSelectedUid)} className="w-full py-2 bg-red-600 text-white rounded-lg text-[11px] font-bold">Block Korun</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-2" style={{ WebkitOverflowScrolling: 'touch' }}>
                       {selectedThread.messages.map((m, idx) => (
                         <div key={idx} className={`flex ${m.sender === 'user' ? 'justify-start' : 'justify-end'}`}>
@@ -6072,10 +6181,21 @@ ${buildUserContextBrief(uid)}`;
               <button onClick={() => setShowAllResults(false)}><X className="w-5 h-5 text-slate-400" /></button>
             </div>
             <div className="px-5 pb-5 overflow-y-auto overscroll-contain space-y-3" style={{ WebkitOverflowScrolling: 'touch' }}>
-              {Object.keys(matchResultsHistory).length === 0 ? (
-                <p className="text-xs text-slate-500 text-center py-6">Ekhono kono match er result declare kora hoyni.</p>
+              {(() => {
+                const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+                const recentCount = Object.values(matchResultsHistory).filter(r => {
+                  const ms = Number(r.declaredAtMs) || Date.parse(r.declaredAt) || 0;
+                  return !ms || ms >= weekAgo;
+                }).length;
+                return recentCount === 0;
+              })() ? (
+                <p className="text-xs text-slate-500 text-center py-6">Ei shoptahe kono match er result declare kora hoyni.</p>
               ) : (
                                Object.entries(matchResultsHistory)
+                  .filter(([, r]) => {
+                    const ms = Number(r.declaredAtMs) || Date.parse(r.declaredAt) || 0;
+                    return !ms || ms >= Date.now() - 7 * 24 * 60 * 60 * 1000;
+                  })
                   .sort((a, b) => (b[0] > a[0] ? 1 : -1))
                   .map(([matchId, res]) => (
                     <div key={matchId} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-2`}>
@@ -6272,6 +6392,17 @@ ${buildUserContextBrief(uid)}`;
                 )}
               </div>
 
+              {(() => {
+                const blockInfo = getSupportBlockInfo(user.uid);
+                if (!blockInfo) return null;
+                return (
+                  <div className="mx-4 mb-2 p-3 rounded-xl bg-red-950 border border-red-700 text-[11px] text-red-200 space-y-1 flex-shrink-0">
+                    <p className="font-bold text-red-300">Apnar message dewa bondho kora hoyeche</p>
+                    <p>Karon: {blockInfo.reason}</p>
+                    <p>{blockInfo.until === 'permanent' ? 'Eta permanent block. Admin unblock na korle khulbe na.' : `Abar khulbe: ${fmtBlockUntil(blockInfo.until)}`}</p>
+                  </div>
+                );
+              })()}
               <div className="p-4 pt-2 flex-shrink-0 flex items-center space-x-2 border-t border-slate-800/50">
                 <button
                   type="button"
