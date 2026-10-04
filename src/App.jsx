@@ -7,6 +7,67 @@ import {
 import { db, messaging, auth } from './firebase';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 
+// ---------- Banner video player (custom controls: play/pause, seek, mute) ----------
+function BannerVideo({ src, onEnded }) {
+  const vref = useRef(null);
+  const [playing, setPlaying] = useState(true);
+  const [muted, setMuted] = useState(true);
+  const [cur, setCur] = useState(0);
+  const [dur, setDur] = useState(0);
+  const stop = (e) => e.stopPropagation();
+  const togglePlay = (e) => {
+    e.stopPropagation();
+    const v = vref.current; if (!v) return;
+    if (v.paused) { const pr = v.play(); if (pr && pr.catch) pr.catch(() => {}); } else v.pause();
+  };
+  const toggleMute = (e) => {
+    e.stopPropagation();
+    const v = vref.current; if (!v) return;
+    v.muted = !v.muted; setMuted(v.muted);
+  };
+  const fmt = (n) => { n = Math.max(0, Math.floor(n || 0)); return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`; };
+  return (
+    <>
+      <video
+        ref={vref}
+        src={src}
+        className="absolute inset-0 w-full h-full object-cover"
+        autoPlay
+        muted
+        playsInline
+        preload="metadata"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onTimeUpdate={(e) => setCur(e.currentTarget.currentTime)}
+        onLoadedMetadata={(e) => setDur(e.currentTarget.duration)}
+        onEnded={() => { if (onEnded) onEnded(); }}
+        onError={() => { if (onEnded) setTimeout(onEnded, 2500); }}
+      />
+      <div
+        className="absolute left-0 right-0 bottom-0 z-10 px-2 pb-1.5 pt-4 bg-gradient-to-t from-black/70 to-transparent flex items-center space-x-2"
+        onClick={stop} onTouchStart={stop} onTouchEnd={stop} onTouchMove={stop} onMouseDown={stop} onMouseUp={stop}
+      >
+        <button type="button" onClick={togglePlay} className="w-7 h-7 flex items-center justify-center rounded-full bg-black/50 text-white flex-shrink-0">
+          {playing
+            ? <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="1" width="3" height="10" /><rect x="7" y="1" width="3" height="10" /></svg>
+            : <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M2 1l9 5-9 5z" /></svg>}
+        </button>
+        <input
+          type="range" min="0" max={dur || 0} step="0.1" value={cur}
+          onChange={(e) => { const v = vref.current; if (v) { v.currentTime = Number(e.target.value); setCur(Number(e.target.value)); } }}
+          className="flex-1 h-1 accent-white"
+        />
+        <span className="text-[9px] text-white/80 font-mono flex-shrink-0">{fmt(cur)}/{fmt(dur)}</span>
+        <button type="button" onClick={toggleMute} className="w-7 h-7 flex items-center justify-center rounded-full bg-black/50 text-white flex-shrink-0">
+          {muted
+            ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg>
+            : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 010 7" /><path d="M19 5a10 10 0 010 14" /></svg>}
+        </button>
+      </div>
+    </>
+  );
+}
+
 // ---------- Sound engine ----------
 // Each event has its own short melody. Playback uses WebAudio when the AudioContext is
 // running; otherwise (locked / suspended / unsupported, common in mobile WebViews) the same
@@ -519,6 +580,22 @@ export default function App() {
   const [showInviteFriends, setShowInviteFriends] = useState(false);
   const [showAppDeveloper, setShowAppDeveloper] = useState(false);
   const [showAskProblem, setShowAskProblem] = useState(false);
+  // Referral link support: https://your-app/?ref=USER_UID
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const ref = (params.get('ref') || '').trim();
+      if (ref) {
+        localStorage.setItem('urff_ref', ref);
+        setRegReferralCode(ref);
+        if (!localStorage.getItem('urff_session')) setActiveTab('register');
+        window.history.replaceState({}, '', window.location.pathname);
+      } else {
+        const saved = localStorage.getItem('urff_ref');
+        if (saved) setRegReferralCode(saved);
+      }
+    } catch {}
+  }, []);
   const [supportChats, _setSupportChats] = useState({});
 
   // Firestore onSnapshot keeps the support panel live. Message appends use a
@@ -566,11 +643,32 @@ export default function App() {
   const [shopSearchQuery, setShopSearchQuery] = useState('');
   const [adminShopSearchQuery, setAdminShopSearchQuery] = useState('');
   const [adminPlayerSearchQuery, setAdminPlayerSearchQuery] = useState('');
+  const [adminInviteOpenUid, setAdminInviteOpenUid] = useState(null);
   const [expandedPlayerUid, setExpandedPlayerUid] = useState(null);
   const [adminBanReason, setAdminBanReason] = useState('');
   const [regReferralCode, setRegReferralCode] = useState('');
   const BALANCE_SHARE_FEE = 5;
   const INVITE_BONUS = 5;
+  const INVITE_MAX_REWARDED = 5; // a user is rewarded for at most 5 successful (deposited) referrals
+  const getReferralLink = (uid) => `${window.location.origin}/?ref=${uid}`;
+  const getReferralStats = (uid) => {
+    const list = registeredUsers.filter(x => x.referredBy === uid);
+    const rewarded = list.filter(x => x.referralBonusPaid === true && Number(x.referralBonusAmount) > 0);
+    return {
+      list,
+      invited: list.length,
+      earned: rewarded.reduce((sum, x) => sum + (Number(x.referralBonusAmount) || 0), 0),
+      rewardedCount: rewarded.length,
+    };
+  };
+  const shareReferralLink = async (uid) => {
+    const link = getReferralLink(uid);
+    const text = `UR FF TOUR e join korun! Amar referral link diye register korun: ${link}`;
+    try {
+      if (navigator.share) { await navigator.share({ title: 'UR FF TOUR', text, url: link }); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    copyToClipboard(link, 'Referral link');
+  };
 
   // Admin Panel State
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
@@ -668,6 +766,7 @@ export default function App() {
   const [bannerSubtitleInput, setBannerSubtitleInput] = useState('');
   const [bannerImageInput, setBannerImageInput] = useState('');
   const [bannerMediaType, setBannerMediaType] = useState('image');
+  const [bannerLinkInput, setBannerLinkInput] = useState('');
 
   // Logo Form (Admin)
   const [logoInput, setLogoInput] = useState('');
@@ -936,6 +1035,8 @@ export default function App() {
     return () => unsub();
   }, []);
   const [showAllResults, setShowAllResults] = useState(false);
+  const [resultsFilterCat, setResultsFilterCat] = useState('all');
+  const [resultsDetailId, setResultsDetailId] = useState(null);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboardPeriod, setLeaderboardPeriod] = useState('monthly'); // weekly | monthly | alltime
   const [leaderboardMetric, setLeaderboardMetric] = useState('wins'); // wins | earnings | withdrawn
@@ -1411,6 +1512,19 @@ export default function App() {
   };
 
   const activeBanners = banners.filter(b => (b.image && String(b.image).trim()) || (b.title && String(b.title).trim()));
+
+  // Swipe + tap handling for the home banner carousel.
+  const _bannerTouchRef = useRef({ x: 0, y: 0, moved: false });
+  const goBanner = (dir) => {
+    if (activeBanners.length <= 1) return;
+    setBannerCarouselIndex(prev => (prev + dir + activeBanners.length * 10) % activeBanners.length);
+  };
+  const openBannerLink = (b) => {
+    const raw = String((b && b.link) || '').trim();
+    if (!raw) return;
+    const url = /^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : 'https://' + raw;
+    try { window.open(url, '_blank', 'noopener,noreferrer'); } catch {}
+  };
 
   // Image banners change after 5s; video banners change only after the video ends.
   useEffect(() => {
@@ -1891,8 +2005,16 @@ export default function App() {
       depositBalance: 0.00,
       winningBalance: 5.00,
       totalDeposited: 0.00,
-      totalWithdrawn: 0.00
+      totalWithdrawn: 0.00,
+      createdAtMs: Date.now()
     };
+    // Referral: only remember WHO invited this user. The referrer's bonus is paid automatically
+    // later, when this user's first deposit is approved.
+    const _refInput = regReferralCode.trim();
+    if (_refInput && _refInput !== newUserObj.uid && registeredUsers.some(u => u.uid === _refInput)) {
+      newUserObj.referredBy = _refInput;
+      newUserObj.referralBonusPaid = false;
+    }
 
     setRegisteredUsers([...registeredUsers, newUserObj]);
     setDoc(doc(db, 'users', newUserObj.uid), newUserObj).catch(err => console.error('Failed to save user:', err));
@@ -1911,14 +2033,7 @@ export default function App() {
     setHasActiveSession(true);
     localStorage.setItem('urff_session', JSON.stringify(newLoggedInUser));
 
-    const refCode = regReferralCode.trim();
-    if (refCode && refCode !== newUserObj.uid) {
-      const referrer = registeredUsers.find(u => u.uid === refCode);
-      if (referrer) {
-        setRegisteredUsers(prev => prev.map(u => u.uid === refCode ? { ...u, winningBalance: (u.winningBalance || 0) + INVITE_BONUS } : u));
-        setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Invite Bonus! 🎉', message: `${regUsername} apnar referral code diye register korechen. Apni ৳${INVITE_BONUS} bonus peyechen.`, time: 'Just now', targetUid: refCode }, ...prev]);
-      }
-    }
+    try { localStorage.removeItem('urff_ref'); } catch {}
     setRegReferralCode('');
     setRegGoogle(null);
     setRegGmail('');
@@ -2363,19 +2478,17 @@ export default function App() {
     setBannerSubtitleInput(b.subtitle || '');
     setBannerImageInput(b.image || '');
     setBannerMediaType(b.mediaType || 'image');
+    setBannerLinkInput(b.link || '');
   };
 
   const handleSaveBanner = async () => {
-    if (!bannerTitleInput.trim() && !bannerImageInput) {
-      showToast('Banner title ba image/video din');
-      return;
-    }
-
+    // No field is mandatory: whatever is filled gets saved, empty fields are simply skipped.
     const bannerData = {
-      image: bannerImageInput,
+      image: bannerImageInput.trim(),
       mediaType: bannerMediaType,
       title: bannerTitleInput.trim(),
       subtitle: bannerSubtitleInput.trim(),
+      link: bannerLinkInput.trim(),
       updatedAt: Date.now(),
     };
 
@@ -2396,7 +2509,7 @@ export default function App() {
 
   const handleClearBannerSlot = async () => {
     const nextList = banners.map((b, i) => i === editingBannerSlot
-      ? { image: '', mediaType: 'image', title: '', subtitle: '', updatedAt: Date.now() }
+      ? { image: '', mediaType: 'image', title: '', subtitle: '', link: '', updatedAt: Date.now() }
       : b
     );
 
@@ -2407,6 +2520,7 @@ export default function App() {
       setBannerSubtitleInput('');
       setBannerImageInput('');
       setBannerMediaType('image');
+      setBannerLinkInput('');
       showToast(`Banner ${editingBannerSlot + 1} clear kora hoyeche!`);
     } catch (err) {
       console.error('Clear banner error:', err);
@@ -2864,6 +2978,23 @@ export default function App() {
 
   const handleApproveDeposit = (dep) => {
     applyBalanceChange(dep.uid, { deposit: dep.amount, totalDeposited: dep.amount });
+    // Referral bonus: pay the referrer INVITE_BONUS on this user's FIRST approved deposit (max 5 rewarded referrals).
+    try {
+      const depositor = registeredUsers.find(u => u.uid === dep.uid);
+      if (depositor && depositor.referredBy && depositor.referralBonusPaid !== true && Number(dep.amount) > 0) {
+        const referrerUid = depositor.referredBy;
+        const referrer = registeredUsers.find(u => u.uid === referrerUid);
+        const rewardedSoFar = registeredUsers.filter(x => x.referredBy === referrerUid && x.referralBonusPaid === true && Number(x.referralBonusAmount) > 0).length;
+        const pay = referrer && rewardedSoFar < INVITE_MAX_REWARDED ? INVITE_BONUS : 0;
+        const patch = { referralBonusPaid: true, referralBonusAmount: pay, referralPaidAtMs: Date.now() };
+        setRegisteredUsers(prev => prev.map(u => u.uid === dep.uid ? { ...u, ...patch } : u));
+        updateDoc(doc(db, 'users', dep.uid), patch).catch(e => console.error('Referral flag save error:', e));
+        if (pay > 0) {
+          applyBalanceChange(referrerUid, { winning: pay });
+          setUserNotifications(prev => [{ id: 'not_' + Date.now() + 'r', title: 'Invite Bonus!', message: `${depositor.name} first deposit korechen. Apni ৳${pay} bonus peyechen.`, time: 'Just now', targetUid: referrerUid }, ...prev]);
+        }
+      }
+    } catch (e) { console.error('Referral payout error:', e); }
     setPendingDeposits(pendingDeposits.filter(d => d.id !== dep.id));
     deleteDoc(doc(db, 'pendingDeposits', dep.id)).catch(e => console.error(e));
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Deposit Approved', message: `Apnar ${dep.amount} Taka deposit request approve hoyeche.`, time: 'Just now', targetUid: dep.uid }, ...prev]);
@@ -2962,7 +3093,7 @@ App facts you can rely on when answering:
 - Deposit money via: ${methods || 'bKash/Nagad'} to the number shown on the Add Money screen.
 - Withdrawals: minimum ৳100, requested from Wallet > Withdraw using the user's total balance; admin approves manually.
 - Shop has two sections: Diamond Top-up (Free Fire UID top-ups) and Products (physical items — Cash on Delivery charges a ৳150 advance now and the rest on delivery, or pay the full amount online via wallet).
-- New accounts get a ৳30 signup bonus. Referral code (a friend's UID) earns the referrer ৳5.
+- New accounts get a ৳30 signup bonus. Referral link/code (a friend's UID) earns the referrer ৳5 automatically after the friend's FIRST approved deposit (max 5 rewarded referrals per user).
 - Users can see joined matches in "My Match" and overall winners in "UR FF ALL MATCH RESULTS". Joined matches disappear from "My Match" 24 hours after the match time or 24 hours after results are declared, whichever is later.
 - Balance Share lets a user send wallet balance to another user's UID for a ৳5 fee.
 - Support contact number: ${appSettings.contactNumber || 'not set'}. Telegram: ${appSettings.telegramLink || 'not set'}.
@@ -3336,6 +3467,14 @@ ${buildUserContextBrief(uid)}`;
       [matchResultsModal.id]: {
         title: matchResultsModal.title,
         category: matchResultsModal.category,
+        categoryId: matchResultsModal.categoryId || '',
+        matchTime: matchResultsModal.time || '',
+        prizePool: matchResultsModal.prizePool || 0,
+        perKill: matchResultsModal.perKill || 0,
+        entryFee: matchResultsModal.entryFee || 0,
+        map: matchResultsModal.map || '',
+        mode: matchResultsModal.mode || '',
+        image: (typeof matchResultsModal.image === 'string' && matchResultsModal.image.length < 200000) ? matchResultsModal.image : '',
         declaredAt: new Date().toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }),
         declaredAtMs: Date.now(),
         declaredAtISO: new Date().toISOString(),
@@ -4583,6 +4722,42 @@ ${buildUserContextBrief(uid)}`;
                               )}
                             </div>
 
+                            {(() => {
+                              const st = getReferralStats(p.uid);
+                              const invitedBy = p.referredBy ? registeredUsers.find(x => x.uid === p.referredBy) : null;
+                              return (
+                                <div className="space-y-2">
+                                  <button
+                                    onClick={() => setAdminInviteOpenUid(adminInviteOpenUid === p.uid ? null : p.uid)}
+                                    className={`w-full py-2 ${t.input} border rounded-lg text-xs font-bold flex items-center justify-between px-3`}
+                                  >
+                                    <span>Invite ({st.invited}) {'•'} Earned {'৳'}{st.earned}</span>
+                                    <ChevronRight className={`w-4 h-4 transition-transform ${adminInviteOpenUid === p.uid ? 'rotate-90' : ''}`} />
+                                  </button>
+                                  {adminInviteOpenUid === p.uid && (
+                                    <div className="space-y-2">
+                                      <div className="grid grid-cols-3 gap-2 text-center">
+                                        <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-lg py-2`}><p className="text-[9px] text-slate-500">INVITED</p><p className="text-sm font-black">{st.invited}</p></div>
+                                        <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-lg py-2`}><p className="text-[9px] text-slate-500">DEPOSITED</p><p className="text-sm font-black">{st.list.filter(x => x.referralBonusPaid === true).length}</p></div>
+                                        <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-lg py-2`}><p className="text-[9px] text-slate-500">EARNED</p><p className="text-sm font-black text-emerald-400">{'৳'}{st.earned}</p></div>
+                                      </div>
+                                      {invitedBy && <p className="text-[10px] text-slate-500">Ei player ke invite korechen: <span className="font-bold text-slate-300">{invitedBy.name} ({invitedBy.uid})</span></p>}
+                                      {st.list.length === 0 ? (
+                                        <p className="text-[11px] text-slate-500">Ei player keu ke invite koreni.</p>
+                                      ) : st.list.map(r => (
+                                        <div key={r.uid} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-lg px-2 py-1.5 flex items-center justify-between text-[11px]`}>
+                                          <span className="truncate">{r.name} <span className="text-slate-500 font-mono">({r.uid})</span></span>
+                                          {r.referralBonusPaid === true
+                                            ? <span className="text-emerald-400 font-bold flex-shrink-0 ml-2">{Number(r.referralBonusAmount) > 0 ? `Deposited +৳${r.referralBonusAmount}` : 'Deposited (limit)'}</span>
+                                            : <span className="text-amber-400 flex-shrink-0 ml-2">Deposit pending</span>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+
                             <div className="space-y-2">
                               <p className="text-[10px] font-bold text-slate-500">Ban Controls</p>
                               {isBanned && (
@@ -4987,7 +5162,7 @@ ${buildUserContextBrief(uid)}`;
                       onClick={() => loadBannerFormFromSlot(idx)}
                       className={`py-2 rounded-xl text-xs font-bold border ${editingBannerSlot === idx ? 'bg-indigo-600 border-indigo-600 text-white' : `${t.input} ${t.sub}`}`}
                     >
-                      Banner {idx + 1}{banners[idx] && (banners[idx].image || banners[idx].title) ? '' : ' (khali)'}
+                      Banner {idx + 1}{banners[idx] && (banners[idx].image || banners[idx].title || banners[idx].link) ? '' : ' (khali)'}
                     </button>
                   ))}
                 </div>
@@ -5023,6 +5198,24 @@ ${buildUserContextBrief(uid)}`;
                   <button onClick={() => setBannerImageInput('')} className="text-[10px] text-red-400 font-semibold">Remove media (gradient background use hobe)</button>
                 )}
 
+                <div>
+                  <label className="text-[10px] text-slate-500">Video Link (direct .mp4 URL) - optional</label>
+                  <input
+                    value={bannerMediaType === 'video' ? bannerImageInput : ''}
+                    onChange={(e) => { setBannerImageInput(e.target.value); setBannerMediaType(e.target.value.trim() ? 'video' : 'image'); }}
+                    placeholder="https://example.com/video.mp4"
+                    className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1`}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500">Banner Link (click korle ekhane jabe) - optional</label>
+                  <input
+                    value={bannerLinkInput}
+                    onChange={(e) => setBannerLinkInput(e.target.value)}
+                    placeholder="https://..."
+                    className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1`}
+                  />
+                </div>
                 <div>
                   <label className="text-[10px] text-slate-500">Banner Title</label>
                   <input value={bannerTitleInput} onChange={(e) => setBannerTitleInput(e.target.value)} placeholder="e.g. Win Big in Free Fire Tournaments!" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1`} />
@@ -5527,6 +5720,7 @@ ${buildUserContextBrief(uid)}`;
     { id: 'home', label: 'Home', icon: Home },
     { id: 'mymatch', label: 'My Match', icon: Gamepad2 },
     { id: 'shop', label: 'Shop', icon: ShoppingBag },
+    { id: 'results', label: 'Results', icon: Trophy },
     { id: 'profile', label: 'Profile', icon: User },
   ];
 
@@ -5564,18 +5758,35 @@ ${buildUserContextBrief(uid)}`;
           {showBanner && activeBanners.length > 0 && (() => {
             const currentBanner = activeBanners[bannerCarouselIndex % activeBanners.length];
             return (
-                            <div className="relative rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 p-5 overflow-hidden" style={{ aspectRatio: '667/340' }}>
+                            <div
+                className={`relative rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 p-5 overflow-hidden ${currentBanner.link ? 'cursor-pointer' : ''}`}
+                style={{ aspectRatio: '667/340', touchAction: 'pan-y' }}
+                onTouchStart={(e) => { const t0 = e.touches[0]; _bannerTouchRef.current = { x: t0.clientX, y: t0.clientY, moved: false }; }}
+                onTouchEnd={(e) => {
+                  const t1 = e.changedTouches[0];
+                  const dx = t1.clientX - _bannerTouchRef.current.x;
+                  const dy = t1.clientY - _bannerTouchRef.current.y;
+                  if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+                    _bannerTouchRef.current.moved = true;
+                    goBanner(dx < 0 ? 1 : -1);
+                  }
+                }}
+                onClick={() => {
+                  if (_bannerTouchRef.current.moved) { _bannerTouchRef.current.moved = false; return; }
+                  openBannerLink(currentBanner);
+                }}
+              >
                 {currentBanner.image && (isVideoBanner(currentBanner) ? (
-                  <video src={currentBanner.image} className="absolute inset-0 w-full h-full object-cover" autoPlay muted loop playsInline onEnded={() => setBannerCarouselIndex(prev => (prev + 1) % activeBanners.length)} />
+                  <BannerVideo key={currentBanner.image + bannerCarouselIndex} src={currentBanner.image} onEnded={() => goBanner(1)} />
                 ) : (
                   <img src={currentBanner.image} alt="" className="absolute inset-0 w-full h-full object-cover" />
                 ))}
                                 <div className={currentBanner.image ? 'absolute inset-0 bg-black/10' : ''} />
-                <button onClick={() => setShowBanner(false)} className="absolute top-2 right-2 text-white/70 z-10"><X className="w-4 h-4" /></button>
+                <button onClick={(e) => { e.stopPropagation(); setShowBanner(false); }} className="absolute top-2 right-2 text-white/70 z-10"><X className="w-4 h-4" /></button>
                 {currentBanner.title && <p className="relative text-white font-black text-lg leading-tight drop-shadow">{currentBanner.title}</p>}
                 {currentBanner.subtitle && <p className="relative text-indigo-100 text-xs mt-1 drop-shadow">{currentBanner.subtitle}</p>}
                 {activeBanners.length > 1 && (
-                  <div className="relative flex items-center space-x-1.5 mt-3">
+                  <div className={`${isVideoBanner(currentBanner) ? 'absolute top-2 left-3' : 'relative mt-3'} flex items-center space-x-1.5`}>
                     {activeBanners.map((_, idx) => (
                       <span key={idx} className={`h-1.5 rounded-full transition-all ${idx === (bannerCarouselIndex % activeBanners.length) ? 'w-5 bg-white' : 'w-1.5 bg-white/40'}`} />
                     ))}
@@ -5674,6 +5885,147 @@ ${buildUserContextBrief(uid)}`;
           </button>
         </div>
       )}
+
+      {activeTab === 'results' && (() => {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        const nowMs = Date.now();
+        const items = Object.entries(matchResultsHistory)
+          .map(([id, hist]) => {
+            const mt = tournaments.find(x => x.id === id) || {};
+            const ms = Number(hist.declaredAtMs) || Date.parse(hist.declaredAt) || 0;
+            return {
+              id, hist, ms,
+              title: hist.title || mt.title || 'Match',
+              time: hist.matchTime || mt.time || hist.declaredAt || '',
+              category: hist.category || mt.category || '',
+              categoryId: hist.categoryId || mt.categoryId || '',
+              prizePool: hist.prizePool ?? mt.prizePool ?? 0,
+              perKill: hist.perKill ?? mt.perKill ?? 0,
+              entryFee: hist.entryFee ?? mt.entryFee ?? 0,
+              map: hist.map || mt.map || '',
+              mode: hist.mode || mt.mode || '',
+              image: hist.image || (typeof mt.image === 'string' && mt.image.length > 4 ? mt.image : ''),
+            };
+          })
+          .filter(x => x.ms && nowMs - x.ms <= DAY_MS)
+          .sort((a, b) => b.ms - a.ms);
+        const catCount = (cid) => items.filter(x => x.categoryId === cid).length;
+        const shown = resultsFilterCat === 'all' ? items : items.filter(x => x.categoryId === resultsFilterCat);
+        const codeOf = (id) => '#' + String(id).replace(/[^a-zA-Z0-9]/g, '').slice(-5).toUpperCase();
+        const isImg = (v) => typeof v === 'string' && (v.startsWith('data:') || v.startsWith('http'));
+
+        if (resultsDetailId) {
+          const it = items.find(x => x.id === resultsDetailId);
+          if (!it) {
+            return (
+              <div className="p-4 space-y-3">
+                <button onClick={() => setResultsDetailId(null)} className="flex items-center space-x-1 text-xs text-slate-400"><ArrowLeft className="w-4 h-4" /><span>Back</span></button>
+                <p className="text-xs text-slate-500 text-center py-10">Ei result ar dekha jabe na (24 ghonta pore muche jay).</p>
+              </div>
+            );
+          }
+          const winners = [...(it.hist.winners || [])].sort((a, b) => (parseInt(a.rank) || 999) - (parseInt(b.rank) || 999));
+          const total = winners.reduce((sum, w) => sum + (parseFloat(w.prize) || 0), 0);
+          const gameNameOf = (w) => {
+            const part = (matchParticipants[it.id] || []).find(pp => pp.accountUid === (w.accountUid || '').trim());
+            const first = part && Array.isArray(part.players) && part.players[0];
+            return (first && first.ign) || '';
+          };
+          return (
+            <div className="p-4 space-y-4">
+              <button onClick={() => setResultsDetailId(null)} className="flex items-center space-x-1 text-xs text-slate-400"><ArrowLeft className="w-4 h-4" /><span>Back</span></button>
+              <div className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-4`}>
+                <div className="flex items-center space-x-3">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-800 flex items-center justify-center flex-shrink-0">
+                    {isImg(it.image) ? <img src={it.image} alt="" className="w-full h-full object-cover" /> : <Trophy className="w-7 h-7 text-amber-400" />}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-black text-base leading-tight">{it.title}</p>
+                    <p className="text-xs text-orange-400">{it.time}</p>
+                    <p className="text-[11px] text-slate-400 uppercase">{it.category}{it.map ? ` \u00b7 ${it.map}` : ''}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {[['WIN PRIZE', it.prizePool], ['PER KILL', it.perKill], ['ENTRY FEE', it.entryFee]].map(([k, v]) => (
+                    <div key={k}><p className="text-[10px] text-slate-500 font-semibold tracking-wide">{k}</p><p className="text-xl font-black">{v}</p></div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-black flex items-center space-x-2"><Trophy className="w-4 h-4 text-amber-400" /><span>MATCH RESULTS</span></p>
+                <p className="text-sm font-bold text-indigo-400">Total: {'\u09f3'}{total}</p>
+              </div>
+              <div className="space-y-2.5">
+                {winners.length === 0 ? (
+                  <p className="text-xs text-slate-500 text-center py-6">Kono winner nei.</p>
+                ) : winners.map((w, idx) => {
+                  const prize = parseFloat(w.prize) || 0;
+                  const gold = prize > 0;
+                  const game = gameNameOf(w);
+                  return (
+                    <div key={idx} className={`rounded-2xl border p-3 flex items-center justify-between ${gold ? 'border-amber-500/50 bg-amber-500/10' : `${t.border} ${t.card}`}`}>
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <div className={`w-9 text-center font-black ${gold ? 'text-amber-400' : 'text-slate-500'}`}>#{w.rank}</div>
+                        <div className="min-w-0">
+                          <p className={`text-sm font-bold truncate ${gold ? 'text-amber-300' : ''}`}>{w.name}</p>
+                          <p className="text-[11px] text-slate-400">{parseInt(w.points, 10) || 0} kills</p>
+                          {game && <p className="text-[11px] text-blue-400 truncate">Game: {game}</p>}
+                        </div>
+                      </div>
+                      <p className={`text-base font-black flex-shrink-0 ml-2 ${gold ? 'text-blue-400' : 'text-slate-500'}`}>{prize > 0 ? `\u09f3${prize}` : '-'}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="p-4 space-y-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-11 h-11 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center"><Trophy className="w-5 h-5 text-amber-400" /></div>
+              <div>
+                <h2 className="text-xl font-black leading-tight">Results</h2>
+                <p className="text-[10px] text-slate-500 tracking-widest">ALL PUBLISHED MATCH RESULTS (LAST 24 HOURS)</p>
+              </div>
+            </div>
+            <div className="flex space-x-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+              <button onClick={() => setResultsFilterCat('all')} className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-bold border ${resultsFilterCat === 'all' ? 'bg-blue-600 border-blue-600 text-white' : `${t.input}`}`}>ALL ({items.length})</button>
+              {matchCategories.map(c => (
+                <button key={c.id} onClick={() => setResultsFilterCat(c.id)} className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-bold border uppercase ${resultsFilterCat === c.id ? 'bg-blue-600 border-blue-600 text-white' : `${t.input}`}`}>{c.name} ({catCount(c.id)})</button>
+              ))}
+            </div>
+            {shown.length === 0 ? (
+              <p className="text-xs text-slate-500 text-center py-12">Ekhon kono result nei. Notun result ashle ekhane dekha jabe.</p>
+            ) : shown.map(it => (
+              <div key={it.id} className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-3`}>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center space-x-3 min-w-0">
+                    <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-800 flex items-center justify-center flex-shrink-0">
+                      {isImg(it.image) ? <img src={it.image} alt="" className="w-full h-full object-cover" /> : <Trophy className="w-6 h-6 text-amber-400" />}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-black text-sm truncate">{it.title}</p>
+                      <p className="text-xs text-orange-400">{it.time}</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-black bg-orange-500 text-white px-2 py-1 rounded-full flex-shrink-0 ml-2">{codeOf(it.id)}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-xl border border-emerald-700/50 bg-emerald-950/40 py-2"><p className="text-[9px] text-slate-400">WIN PRIZE</p><p className="text-lg font-black text-emerald-400">{it.prizePool}</p></div>
+                  <div className="rounded-xl border border-indigo-700/50 bg-indigo-950/40 py-2"><p className="text-[9px] text-slate-400">PER KILL</p><p className="text-lg font-black text-indigo-400">{it.perKill}</p></div>
+                  <div className="rounded-xl border border-rose-700/50 bg-rose-950/40 py-2"><p className="text-[9px] text-slate-400">ENTRY FEE</p><p className="text-lg font-black text-rose-400">{it.entryFee}</p></div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center text-[11px] text-slate-400 uppercase">
+                  <span className="truncate">{it.category}</span><span className="truncate">{it.map || '-'}</span><span className="truncate">{it.mode || '-'}</span>
+                </div>
+                <button onClick={() => setResultsDetailId(it.id)} className="w-full pt-2 border-t border-slate-800/60 text-sm font-semibold text-blue-400">View Result &gt;</button>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {activeTab === 'shop' && (
         <div className="p-4 space-y-4">
@@ -5783,13 +6135,6 @@ ${buildUserContextBrief(uid)}`;
                 <p className="text-sm font-black text-emerald-400">৳{totalWinnings}</p>
               </div>
             </div>
-
-            <button
-              onClick={() => setShowAllResults(true)}
-              className="w-full py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5"
-            >
-              <Trophy className="w-4 h-4" /><span>UR FF ALL MATCH RESULTS</span>
-            </button>
 
             <div className="space-y-3">
               {myMatches.length === 0 ? (
@@ -6036,8 +6381,8 @@ ${buildUserContextBrief(uid)}`;
         {navItems.map(item => (
           <button
             key={item.id}
-            onClick={() => setActiveTab(item.id)}
-            className={`flex flex-col items-center space-y-1 px-4 py-1.5 rounded-xl transition-colors ${activeTab === item.id ? 'text-indigo-400' : 'text-slate-500'}`}
+            onClick={() => { setResultsDetailId(null); setActiveTab(item.id); }}
+            className={`flex flex-col items-center space-y-1 px-2.5 py-1.5 rounded-xl transition-colors ${activeTab === item.id ? 'text-indigo-400' : 'text-slate-500'}`}
           >
             <item.icon className="w-5 h-5" />
             <span className="text-[10px] font-semibold">{item.label}</span>
@@ -6299,9 +6644,12 @@ ${buildUserContextBrief(uid)}`;
         </div>
       )}
 
-      {showInviteFriends && (
+      {showInviteFriends && (() => {
+        const stats = getReferralStats(user.uid);
+        const link = getReferralLink(user.uid);
+        return (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setShowInviteFriends(false)}>
-          <div className={`${t.card} w-full max-w-sm rounded-2xl p-5 space-y-4 border ${t.border}`} onClick={(e) => e.stopPropagation()}>
+          <div className={`${t.card} w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-2xl p-5 space-y-4 border ${t.border}`} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-sm">Invite Friends</h3>
               <button onClick={() => setShowInviteFriends(false)}><X className="w-5 h-5 text-slate-400" /></button>
@@ -6310,13 +6658,50 @@ ${buildUserContextBrief(uid)}`;
               <p className="text-emerald-100 text-xs">Apnar Referral Code</p>
               <p className="text-white font-black text-2xl font-mono tracking-wider">{user.uid}</p>
             </div>
-            <p className="text-[11px] text-slate-500 text-center">Apnar friend registration korar somoy ei code "Referral Code" field e dile, apni ৳{INVITE_BONUS} bonus paben — prottekbar!</p>
-            <button onClick={() => copyToClipboard(user.uid, 'Referral code')} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5">
-              <Copy className="w-3.5 h-3.5" /><span>COPY REFERRAL CODE</span>
-            </button>
+            <div className="grid grid-cols-2 gap-2 text-center">
+              <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl py-3`}>
+                <p className="text-[10px] text-slate-500 font-semibold tracking-wide">INVITED</p>
+                <p className="text-xl font-black">{stats.invited}</p>
+              </div>
+              <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl py-3`}>
+                <p className="text-[10px] text-slate-500 font-semibold tracking-wide">EARNED</p>
+                <p className="text-xl font-black text-emerald-400">{'\u09f3'}{stats.earned}</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500 text-center">
+              Apnar friend apnar link diye register kore <b>prothom deposit</b> korle apni {'\u09f3'}{INVITE_BONUS} paben (auto). Maximum {INVITE_MAX_REWARDED} jon er jonno ({stats.rewardedCount}/{INVITE_MAX_REWARDED} use hoyeche).
+            </p>
+            <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl px-3 py-2 text-[10px] font-mono break-all text-slate-400`}>{link}</div>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => copyToClipboard(link, 'Referral link')} className="py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5">
+                <Copy className="w-3.5 h-3.5" /><span>COPY LINK</span>
+              </button>
+              <button onClick={() => shareReferralLink(user.uid)} className="py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5">
+                <Share2 className="w-3.5 h-3.5" /><span>SHARE</span>
+              </button>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-bold">Referral History</p>
+              {stats.list.length === 0 ? (
+                <p className="text-[11px] text-slate-500 text-center py-3">Ekhono keu apnar link diye join koreni.</p>
+              ) : stats.list.map(r => (
+                <div key={r.uid} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl px-3 py-2 flex items-center justify-between text-[11px]`}>
+                  <div className="min-w-0">
+                    <p className="font-bold truncate">{r.name}</p>
+                    <p className="text-[10px] text-slate-500">{r.createdAtMs ? new Date(r.createdAtMs).toLocaleDateString('en-GB') : ''}</p>
+                  </div>
+                  {r.referralBonusPaid === true
+                    ? (Number(r.referralBonusAmount) > 0
+                        ? <span className="text-emerald-400 font-bold flex-shrink-0 ml-2">Deposited {'\u00b7'} +{'\u09f3'}{r.referralBonusAmount}</span>
+                        : <span className="text-slate-400 flex-shrink-0 ml-2">Deposited (limit full)</span>)
+                    : <span className="text-amber-400 flex-shrink-0 ml-2">Deposit pending</span>}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {showAppDeveloper && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setShowAppDeveloper(false)}>
