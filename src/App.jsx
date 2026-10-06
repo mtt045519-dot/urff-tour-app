@@ -7,6 +7,14 @@ import {
 import { db, messaging, auth } from './firebase';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 
+const _dateKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const URTBV_ROLES = ['Rusher', 'Supporter', 'Bomber', 'Sniper', 'Second Rusher'];
+const _youtubeEmbed = (url) => {
+  const m = String(url || '').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/))([A-Za-z0-9_-]{6,})/);
+  return m ? `https://www.youtube.com/embed/${m[1]}?autoplay=1&rel=0` : '';
+};
+const _isDirectVideo = (url) => /\.(mp4|webm|ogg|mov)(?:$|[?#])/i.test(String(url || ''));
+
 // ---------- Banner video player (custom controls: play/pause, seek, mute) ----------
 function BannerVideo({ src, onEnded }) {
   const vref = useRef(null);
@@ -1080,6 +1088,7 @@ export default function App() {
         }
       });
       return {
+        uid: u.uid,
         name: u.name,
         avatar: u.avatar || '',
         wins,
@@ -1883,6 +1892,111 @@ export default function App() {
     });
   }, [automatedTemplates, tournaments]);
 
+  // ================= Date-based filtering =================
+  const [todayKey, setTodayKey] = useState(() => _dateKey());
+  useEffect(() => {
+    const id = setInterval(() => setTodayKey(_dateKey()), 30000);
+    return () => clearInterval(id);
+  }, []);
+  // A match is "active" for users only on its own date (admin can create future matches in advance).
+  const isMatchToday = (m) => {
+    const mm = /^(\d{4}-\d{2}-\d{2})/.exec(String((m && m.time) || ''));
+    return !mm || mm[1] === todayKey;
+  };
+
+  // ================= Follow / Unfollow =================
+  const followingOf = (uid) => { const u = registeredUsers.find(x => x.uid === uid); return Array.isArray(u && u.following) ? u.following : []; };
+  const followersOf = (uid) => registeredUsers.filter(x => Array.isArray(x.following) && x.following.includes(uid));
+  const [followListView, setFollowListView] = useState(null); // { uid, type: 'following' | 'followers' }
+  const toggleFollow = async (targetUid) => {
+    if (!targetUid || targetUid === user.uid) return;
+    const cur = followingOf(user.uid);
+    const next = cur.includes(targetUid) ? cur.filter(x => x !== targetUid) : [...cur, targetUid];
+    setRegisteredUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, following: next } : u));
+    setUser(prev => ({ ...prev, following: next }));
+    playSound('like');
+    try { await updateDoc(doc(db, 'users', user.uid), { following: next }); }
+    catch (e) { console.error('Follow save error:', e); showToast('Follow save fail: ' + (e && e.code ? e.code : 'error')); }
+  };
+  const [profileShowFollowInput, setProfileShowFollowInput] = useState(true);
+
+  // ================= URTBV (content controlled from Admin Panel) =================
+  const [urtbv, setUrtbv] = useState({ social: {}, videos: [], about: [] });
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'appData', 'urtbv'), (snap) => {
+      if (snap.exists()) { const d = snap.data(); setUrtbv({ social: d.social || {}, videos: d.videos || [], about: d.about || [] }); }
+    }, (e) => console.error('URTBV listen error:', e));
+    return () => unsub();
+  }, []);
+  const saveUrtbv = async (next, msg) => {
+    setUrtbv(next);
+    try { await setDoc(doc(db, 'appData', 'urtbv'), { ...next, updatedAtMs: Date.now() }); showToast(msg || 'URTBV update kora hoyeche!'); }
+    catch (e) { console.error('URTBV save error:', e); showToast('URTBV save fail: ' + (e && e.code ? e.code : 'error')); }
+  };
+  const openExternal = (raw) => {
+    const r = String(raw || '').trim();
+    if (!r) return;
+    const url = /^[a-z][a-z0-9+.-]*:/i.test(r) ? r : 'https://' + r;
+    try { window.open(url, '_blank', 'noopener,noreferrer'); } catch {}
+  };
+  const pickImage = (cb) => (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    compressImage(f, 500, 0.7).then(cb).catch(() => showToast('Image load fail'));
+    e.target.value = '';
+  };
+  const [urtbvView, setUrtbvView] = useState('menu'); // menu | videos | about | teams
+  const [videoPlayer, setVideoPlayer] = useState(null);
+  const [adminUrtbvSection, setAdminUrtbvSection] = useState('social');
+  const [socialDraft, setSocialDraft] = useState({});
+  useEffect(() => { setSocialDraft(urtbv.social || {}); }, [urtbv.social]);
+  const [vf, setVf] = useState({ id: '', title: '', link: '', thumb: '', date: _dateKey() });
+  const [af, setAf] = useState({ id: '', title: '', image: '', description: '', link: '', order: '' });
+
+  // ================= Player / Team profiles =================
+  const [teamProfiles, setTeamProfiles] = useState([]);
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'teamProfiles'), (snap) => {
+      setTeamProfiles(snap.docs.map(d => ({ ...d.data(), uid: d.data().uid || d.id })));
+    }, (e) => console.error('teamProfiles listen error:', e));
+    return () => unsub();
+  }, []);
+  const [teamSearch, setTeamSearch] = useState('');
+  const [teamRoleFilter, setTeamRoleFilter] = useState('All');
+  const [showTeamForm, setShowTeamForm] = useState(false);
+  const [tf, setTf] = useState({ ffUid: '', whatsapp: '', name: '', role: '', logo: '', title: '' });
+  const openTeamForm = () => {
+    const mine = teamProfiles.find(x => x.uid === user.uid);
+    setTf(mine
+      ? { ffUid: mine.ffUid || '', whatsapp: mine.whatsapp || '', name: mine.name || '', role: mine.role || '', logo: mine.logo || '', title: mine.title || '' }
+      : { ffUid: user.ffUid || '', whatsapp: '', name: user.name || '', role: '', logo: '', title: '' });
+    setShowTeamForm(true);
+  };
+  const saveTeamProfile = async () => {
+    const d = { ffUid: tf.ffUid.trim(), whatsapp: tf.whatsapp.trim(), name: tf.name.trim(), role: tf.role, title: tf.title.trim(), logo: tf.logo || '' };
+    if (!d.ffUid || !d.whatsapp || !d.name || !d.role || !d.title) { showToast('Shob field puron korun (UID, WhatsApp, Name, Role, Title)'); return; }
+    const mine = teamProfiles.find(x => x.uid === user.uid);
+    const payload = {
+      ...d, uid: user.uid, ownerName: user.name,
+      verified: !(mine && mine.adminVerifyOff === true),
+      enabled: mine ? mine.enabled !== false : true,
+      adminVerifyOff: !!(mine && mine.adminVerifyOff),
+      createdAtMs: (mine && mine.createdAtMs) || Date.now(), updatedAtMs: Date.now(),
+    };
+    try { await setDoc(doc(db, 'teamProfiles', user.uid), payload); setShowTeamForm(false); playSound('success'); showToast('Profile save hoyeche! Verification successful.'); }
+    catch (e) { console.error(e); showToast('Save fail: ' + (e && e.code ? e.code : 'error')); }
+  };
+  const adminPatchTeam = async (uid, patch) => {
+    try { await updateDoc(doc(db, 'teamProfiles', uid), patch); showToast('Update kora hoyeche!'); }
+    catch (e) { console.error(e); showToast('Update fail: ' + (e && e.code ? e.code : 'error')); }
+  };
+  const adminDeleteTeam = async (uid) => {
+    try { await deleteDoc(doc(db, 'teamProfiles', uid)); showToast('Profile delete kora hoyeche!'); }
+    catch (e) { console.error(e); showToast('Delete fail: ' + (e && e.code ? e.code : 'error')); }
+  };
+
+  const [resultDateInput, setResultDateInput] = useState('');
+
   const [shopItems, setShopItems] = useState([
     { id: 'd1', title: '200 Free Fire Like', type: 'like', price: 20, oldPrice: 50, discount: '-60%', image: '🔥' },
     { id: 'd2', title: '25 Diamond', type: 'diamond', price: 28, oldPrice: 40, discount: '-30%', image: '💎' },
@@ -2589,6 +2703,7 @@ export default function App() {
     setProfileAvatarInput(user.avatar || '');
     setProfilePhoneInput(user.number || '');
     setProfileFfUidInput(user.ffUid || '');
+    { const me = registeredUsers.find(u => u.uid === user.uid); setProfileShowFollowInput(((me && me.showFollowList !== undefined) ? me.showFollowList : user.showFollowList) !== false); }
     setShowProfileSettings(true);
   };
 
@@ -2611,7 +2726,8 @@ export default function App() {
       name: profileNameInput.trim(),
       avatar: profileAvatarInput,
       number: profilePhoneInput.trim(),
-      ffUid: profileFfUidInput.trim()
+      ffUid: profileFfUidInput.trim(),
+      showFollowList: profileShowFollowInput
     };
        const updatedUserObj = { ...user, ...patch };
     setUser(updatedUserObj);
@@ -3477,6 +3593,7 @@ ${buildUserContextBrief(uid)}`;
         image: (typeof matchResultsModal.image === 'string' && matchResultsModal.image.length < 200000) ? matchResultsModal.image : '',
         declaredAt: new Date().toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }),
         declaredAtMs: Date.now(),
+        resultDate: resultDateInput || _dateKey(),
         declaredAtISO: new Date().toISOString(),
         winners: winnerEntries.filter(w => (w.accountUid || '').trim()).map(w => ({ ...w }))
       }
@@ -3486,6 +3603,7 @@ ${buildUserContextBrief(uid)}`;
     });
     setMatchResultsModal(null);
     setWinnerEntries([{ name: '', accountUid: '', rank: '', prize: '', points: '' }]);
+    setResultDateInput('');
     playUiSound('success');
     showToast('Result declare kora hoyeche!');
   };
@@ -4217,7 +4335,7 @@ ${buildUserContextBrief(uid)}`;
   // ---------- CATEGORY DETAIL VIEW ----------
   if (selectedCategoryView) {
     const cat = matchCategories.find(c => c.id === selectedCategoryView);
-    const catMatches = tournaments.filter(mt => mt.categoryId === selectedCategoryView);
+    const catMatches = tournaments.filter(mt => mt.categoryId === selectedCategoryView && isMatchToday(mt));
     return (
       <div className={`min-h-screen ${t.bg} ${t.text} font-sans pb-24 select-none`}>
         {Toast}
@@ -4283,6 +4401,7 @@ ${buildUserContextBrief(uid)}`;
       { id: 'automation', label: 'Automation', icon: Bot },
       { id: 'shop', label: 'Shop', icon: ShoppingBag },
       { id: 'banner', label: 'Banner', icon: ImageIcon },
+      { id: 'urtbv', label: 'URTBV', icon: Globe },
       { id: 'roomids', label: 'Room ID Set', icon: Lock },
       { id: 'deposits', label: 'Deposits', icon: Plus },
       { id: 'withdrawals', label: 'Withdraws', icon: Minus },
@@ -5233,6 +5352,139 @@ ${buildUserContextBrief(uid)}`;
             </div>
           )}
 
+          {adminTab === 'urtbv' && (() => {
+            const card = `${t.card} border ${t.border} rounded-2xl p-4 space-y-3`;
+            const inp = `w-full ${t.input} border p-2.5 rounded-xl text-xs`;
+            const secBtn = (id, label) => (<button key={id} onClick={() => setAdminUrtbvSection(id)} className={`flex-shrink-0 px-3 py-2 rounded-xl text-[11px] font-bold border ${adminUrtbvSection === id ? 'bg-indigo-600 border-indigo-600 text-white' : t.input}`}>{label}</button>);
+            const Toggle = ({ on, onClick }) => (<button type="button" onClick={onClick} className={`w-11 h-6 rounded-full relative transition-colors flex-shrink-0 ${on ? 'bg-emerald-500' : 'bg-slate-600'}`}><div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-all ${on ? 'right-0.5' : 'left-0.5'}`} /></button>);
+            const platforms = [['youtube', 'YouTube'], ['tiktok', 'TikTok'], ['facebook', 'Facebook']];
+            const videos = [...(urtbv.videos || [])].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+            const about = [...(urtbv.about || [])].sort((a, b) => (Number(a.order) || 999) - (Number(b.order) || 999));
+            return (
+              <div className="space-y-4">
+                <p className="text-xs font-bold flex items-center space-x-1.5"><Globe className="w-4 h-4 text-indigo-400" /><span>URTBV Management</span></p>
+                <div className="flex space-x-2 overflow-x-auto pb-1">
+                  {secBtn('social', 'Social Links')}{secBtn('videos', 'Daily Tour Best Time')}{secBtn('about', 'About Banners')}{secBtn('teams', 'Player/Team & Verification')}
+                </div>
+
+                {adminUrtbvSection === 'social' && platforms.map(([key, label]) => {
+                  const d = socialDraft[key] || { link: '', icon: '', enabled: true };
+                  const setD = (patch) => setSocialDraft(prev => ({ ...prev, [key]: { ...(prev[key] || { link: '', icon: '', enabled: true }), ...patch } }));
+                  return (
+                    <div key={key} className={card}>
+                      <div className="flex items-center justify-between"><p className="text-xs font-bold">{label}</p><Toggle on={d.enabled !== false} onClick={() => setD({ enabled: d.enabled === false })} /></div>
+                      <div className="flex items-center space-x-3">
+                        <div className="w-14 h-14 rounded-2xl bg-slate-800 overflow-hidden flex items-center justify-center text-white font-black flex-shrink-0">{d.icon ? <img src={d.icon} alt="" className="w-full h-full object-cover" /> : label.charAt(0)}</div>
+                        <label className={`flex-1 text-center py-3 ${t.input} border border-dashed rounded-xl text-xs font-bold cursor-pointer`}>{label} Icon/Logo Dao<input type="file" accept="image/*" className="hidden" onChange={pickImage((v) => setD({ icon: v }))} /></label>
+                      </div>
+                      <input value={d.link || ''} onChange={(e) => setD({ link: e.target.value })} placeholder={`${label} link`} className={inp} />
+                      <div className="flex space-x-2">
+                        <button onClick={() => saveUrtbv({ ...urtbv, social: { ...(urtbv.social || {}), [key]: { link: (d.link || '').trim(), icon: d.icon || '', enabled: d.enabled !== false } } }, `${label} save kora hoyeche!`)} className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold">SAVE</button>
+                        <button onClick={() => { const next = { ...(urtbv.social || {}) }; delete next[key]; saveUrtbv({ ...urtbv, social: next }, `${label} delete kora hoyeche!`); }} className="px-4 py-2.5 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-xs font-bold">Delete</button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {adminUrtbvSection === 'videos' && (
+                  <>
+                    <div className={card}>
+                      <p className="text-xs font-bold">{vf.id ? 'Edit Video' : 'Add Video'}</p>
+                      <input value={vf.title} onChange={(e) => setVf({ ...vf, title: e.target.value })} placeholder="Title" className={inp} />
+                      <input value={vf.link} onChange={(e) => setVf({ ...vf, link: e.target.value })} placeholder="Video link (YouTube ba direct .mp4)" className={inp} />
+                      <input type="date" value={vf.date} onChange={(e) => setVf({ ...vf, date: e.target.value })} onClick={(e) => { try { e.currentTarget.showPicker && e.currentTarget.showPicker(); } catch {} }} className={inp} />
+                      <div className="flex items-center space-x-3">
+                        <div className="w-20 h-12 rounded-lg bg-slate-800 overflow-hidden flex-shrink-0">{vf.thumb && <img src={vf.thumb} alt="" className="w-full h-full object-cover" />}</div>
+                        <label className={`flex-1 text-center py-3 ${t.input} border border-dashed rounded-xl text-xs font-bold cursor-pointer`}>Thumbnail Dao<input type="file" accept="image/*" className="hidden" onChange={pickImage((v) => setVf(prev => ({ ...prev, thumb: v })))} /></label>
+                      </div>
+                      <div className="flex space-x-2">
+                        <button onClick={() => {
+                          if (!vf.link.trim()) { showToast('Video link din'); return; }
+                          const item = { id: vf.id || ('v_' + Date.now()), title: vf.title.trim(), link: vf.link.trim(), thumb: vf.thumb, date: vf.date || _dateKey(), enabled: true };
+                          const old = (urtbv.videos || []).find(x => x.id === item.id);
+                          if (old) item.enabled = old.enabled !== false;
+                          const list = old ? (urtbv.videos || []).map(x => x.id === item.id ? item : x) : [item, ...(urtbv.videos || [])];
+                          saveUrtbv({ ...urtbv, videos: list }, vf.id ? 'Video update kora hoyeche!' : 'Video add kora hoyeche!');
+                          setVf({ id: '', title: '', link: '', thumb: '', date: _dateKey() });
+                        }} className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold">{vf.id ? 'UPDATE VIDEO' : 'ADD VIDEO'}</button>
+                        {vf.id && <button onClick={() => setVf({ id: '', title: '', link: '', thumb: '', date: _dateKey() })} className={`px-4 py-2.5 ${t.input} border rounded-xl text-xs font-bold`}>Cancel</button>}
+                      </div>
+                    </div>
+                    {videos.map(v => (
+                      <div key={v.id} className={`${t.card} border ${t.border} rounded-xl p-3 flex items-center space-x-3`}>
+                        <div className="w-16 h-10 rounded-lg bg-slate-800 overflow-hidden flex-shrink-0">{v.thumb && <img src={v.thumb} alt="" className="w-full h-full object-cover" />}</div>
+                        <div className="min-w-0 flex-1"><p className="text-xs font-bold truncate">{v.title || 'Untitled'}</p><p className="text-[10px] text-slate-500">{v.date}</p></div>
+                        <Toggle on={v.enabled !== false} onClick={() => saveUrtbv({ ...urtbv, videos: (urtbv.videos || []).map(x => x.id === v.id ? { ...x, enabled: x.enabled === false } : x) })} />
+                        <button onClick={() => setVf({ id: v.id, title: v.title || '', link: v.link || '', thumb: v.thumb || '', date: v.date || _dateKey() })} className="p-1.5 text-indigo-400"><Edit3 className="w-4 h-4" /></button>
+                        <button onClick={() => saveUrtbv({ ...urtbv, videos: (urtbv.videos || []).filter(x => x.id !== v.id) }, 'Video delete kora hoyeche!')} className="p-1.5 text-red-400"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {adminUrtbvSection === 'about' && (
+                  <>
+                    <div className={card}>
+                      <p className="text-xs font-bold">{af.id ? 'Edit Banner' : 'Add Banner'} ({(urtbv.about || []).length}/15)</p>
+                      <div className="rounded-xl overflow-hidden bg-slate-800" style={{ aspectRatio: '667/340' }}>{af.image && <img src={af.image} alt="" className="w-full h-full object-cover" />}</div>
+                      <label className={`block text-center py-3 ${t.input} border border-dashed rounded-xl text-xs font-bold cursor-pointer`}>Banner Image Dao<input type="file" accept="image/*" className="hidden" onChange={pickImage((v) => setAf(prev => ({ ...prev, image: v })))} /></label>
+                      <input value={af.title} onChange={(e) => setAf({ ...af, title: e.target.value })} placeholder="Title" className={inp} />
+                      <textarea value={af.description} onChange={(e) => setAf({ ...af, description: e.target.value })} placeholder="Description / Details" rows={3} className={inp} />
+                      <input value={af.link} onChange={(e) => setAf({ ...af, link: e.target.value })} placeholder="Click and See link" className={inp} />
+                      <input value={af.order} onChange={(e) => setAf({ ...af, order: e.target.value.replace(/[^0-9]/g, '') })} placeholder="Order / Position (1, 2, 3...)" inputMode="numeric" className={inp} />
+                      <div className="flex space-x-2">
+                        <button onClick={() => {
+                          const isNew = !af.id || !(urtbv.about || []).some(x => x.id === af.id);
+                          if (isNew && (urtbv.about || []).length >= 15) { showToast('Maximum 15 ti banner rakha jabe.'); return; }
+                          if (!af.image && !af.title.trim() && !af.description.trim()) { showToast('Kom kore image, title ba description din'); return; }
+                          const item = { id: af.id || ('a_' + Date.now()), title: af.title.trim(), image: af.image, description: af.description.trim(), link: af.link.trim(), order: af.order, enabled: true };
+                          const old = (urtbv.about || []).find(x => x.id === item.id);
+                          if (old) item.enabled = old.enabled !== false;
+                          const list = old ? (urtbv.about || []).map(x => x.id === item.id ? item : x) : [...(urtbv.about || []), item];
+                          saveUrtbv({ ...urtbv, about: list }, af.id ? 'Banner update kora hoyeche!' : 'Banner add kora hoyeche!');
+                          setAf({ id: '', title: '', image: '', description: '', link: '', order: '' });
+                        }} className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold">{af.id ? 'UPDATE BANNER' : 'ADD BANNER'}</button>
+                        {af.id && <button onClick={() => setAf({ id: '', title: '', image: '', description: '', link: '', order: '' })} className={`px-4 py-2.5 ${t.input} border rounded-xl text-xs font-bold`}>Cancel</button>}
+                      </div>
+                    </div>
+                    {about.map(b => (
+                      <div key={b.id} className={`${t.card} border ${t.border} rounded-xl p-3 flex items-center space-x-3`}>
+                        <div className="w-16 h-10 rounded-lg bg-slate-800 overflow-hidden flex-shrink-0">{b.image && <img src={b.image} alt="" className="w-full h-full object-cover" />}</div>
+                        <div className="min-w-0 flex-1"><p className="text-xs font-bold truncate">{b.title || 'Untitled'}</p><p className="text-[10px] text-slate-500">Order: {b.order || '-'}</p></div>
+                        <Toggle on={b.enabled !== false} onClick={() => saveUrtbv({ ...urtbv, about: (urtbv.about || []).map(x => x.id === b.id ? { ...x, enabled: x.enabled === false } : x) })} />
+                        <button onClick={() => setAf({ id: b.id, title: b.title || '', image: b.image || '', description: b.description || '', link: b.link || '', order: String(b.order || '') })} className="p-1.5 text-indigo-400"><Edit3 className="w-4 h-4" /></button>
+                        <button onClick={() => saveUrtbv({ ...urtbv, about: (urtbv.about || []).filter(x => x.id !== b.id) }, 'Banner delete kora hoyeche!')} className="p-1.5 text-red-400"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {adminUrtbvSection === 'teams' && (
+                  <>
+                    <p className="text-[11px] text-slate-500">Total {teamProfiles.length} ti player/team profile. Form puro fill korle auto Verified hoy; ekhane theke Verify off/on, Enable/Disable ba Delete kora jabe.</p>
+                    {teamProfiles.length === 0 ? <p className="text-xs text-slate-500 text-center py-8">Ekhono kono profile nei.</p> : [...teamProfiles].sort((a, b) => (b.updatedAtMs || 0) - (a.updatedAtMs || 0)).map(x => (
+                      <div key={x.uid} className={`${t.card} border ${t.border} rounded-xl p-3 space-y-2`}>
+                        <div className="flex items-center space-x-3">
+                          <div className="w-11 h-11 rounded-xl bg-slate-800 overflow-hidden flex items-center justify-center font-black flex-shrink-0">{x.logo ? <img src={x.logo} alt="" className="w-full h-full object-cover" /> : String(x.name || '?').charAt(0)}</div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold truncate">{x.name} <span className="text-slate-500 font-mono font-normal">({x.uid})</span></p>
+                            <p className="text-[10px] text-slate-400 truncate">{x.role} {'\u00b7'} {x.title}</p>
+                            <p className="text-[10px] text-slate-500">FF: {x.ffUid} {'\u00b7'} WA: {x.whatsapp}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="flex items-center space-x-2"><span>Verified</span><Toggle on={!!x.verified} onClick={() => adminPatchTeam(x.uid, { verified: !x.verified, adminVerifyOff: !!x.verified })} /></span>
+                          <span className="flex items-center space-x-2"><span>Enabled</span><Toggle on={x.enabled !== false} onClick={() => adminPatchTeam(x.uid, { enabled: x.enabled === false })} /></span>
+                          <button onClick={() => adminDeleteTeam(x.uid)} className="p-1.5 text-red-400"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            );
+          })()}
+
           {adminTab === 'deposits' && !depositUnlocked && (
             <div className="px-4">
               <div className={`${t.card} border rounded-2xl p-5 space-y-3 max-w-sm mx-auto mt-4`}>
@@ -5688,6 +5940,10 @@ ${buildUserContextBrief(uid)}`;
                 <h3 className="font-bold text-sm">Declare Results — {matchResultsModal.title}</h3>
                 <button onClick={() => setMatchResultsModal(null)}><X className="w-5 h-5 text-slate-400" /></button>
               </div>
+              <div>
+                <label className="text-[10px] text-slate-500">Result Date (ei tarikh e user ra dekhbe)</label>
+                <input type="date" value={resultDateInput || todayKey} onChange={(e) => setResultDateInput(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker && e.currentTarget.showPicker(); } catch {} }} className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1`} />
+              </div>
                                          {winnerEntries.map((w, idx) => {
                 const accHolder = registeredUsers.find(u => u.uid === (w.accountUid || '').trim());
                 return (
@@ -5719,8 +5975,9 @@ ${buildUserContextBrief(uid)}`;
   const navItems = [
     { id: 'home', label: 'Home', icon: Home },
     { id: 'mymatch', label: 'My Match', icon: Gamepad2 },
-    { id: 'shop', label: 'Shop', icon: ShoppingBag },
     { id: 'results', label: 'Results', icon: Trophy },
+    { id: 'shop', label: 'Shop', icon: ShoppingBag },
+    { id: 'urtbv', label: 'URTBV', icon: Globe },
     { id: 'profile', label: 'Profile', icon: User },
   ];
 
@@ -5829,7 +6086,7 @@ ${buildUserContextBrief(uid)}`;
             </div>
             <div className="grid grid-cols-2 gap-3">
               {matchCategories.map(cat => {
-                const count = tournaments.filter(t => t.categoryId === cat.id).length;
+                const count = tournaments.filter(t => t.categoryId === cat.id && isMatchToday(t)).length;
                 return (
                   <div
                     key={cat.id}
@@ -5905,9 +6162,10 @@ ${buildUserContextBrief(uid)}`;
               map: hist.map || mt.map || '',
               mode: hist.mode || mt.mode || '',
               image: hist.image || (typeof mt.image === 'string' && mt.image.length > 4 ? mt.image : ''),
+              dateKey: hist.resultDate || (ms ? _dateKey(new Date(ms)) : ''),
             };
           })
-          .filter(x => x.ms && nowMs - x.ms <= DAY_MS)
+          .filter(x => x.dateKey === todayKey)
           .sort((a, b) => b.ms - a.ms);
         const catCount = (cid) => items.filter(x => x.categoryId === cid).length;
         const shown = resultsFilterCat === 'all' ? items : items.filter(x => x.categoryId === resultsFilterCat);
@@ -5920,7 +6178,7 @@ ${buildUserContextBrief(uid)}`;
             return (
               <div className="p-4 space-y-3">
                 <button onClick={() => setResultsDetailId(null)} className="flex items-center space-x-1 text-xs text-slate-400"><ArrowLeft className="w-4 h-4" /><span>Back</span></button>
-                <p className="text-xs text-slate-500 text-center py-10">Ei result ar dekha jabe na (24 ghonta pore muche jay).</p>
+                <p className="text-xs text-slate-500 text-center py-10">Ei result ar dekha jabe na (notun tarikh e purono result soriye jay).</p>
               </div>
             );
           }
@@ -5963,9 +6221,13 @@ ${buildUserContextBrief(uid)}`;
                   const gold = prize > 0;
                   const game = gameNameOf(w);
                   return (
-                    <div key={idx} className={`rounded-2xl border p-3 flex items-center justify-between ${gold ? 'border-amber-500/50 bg-amber-500/10' : `${t.border} ${t.card}`}`}>
+                    <div key={idx} onClick={() => { if (w.accountUid) openPublicProfile((w.accountUid || '').trim()); }} className={`rounded-2xl border p-3 flex items-center justify-between cursor-pointer ${gold ? 'border-amber-500/50 bg-amber-500/10' : `${t.border} ${t.card}`}`}>
                       <div className="flex items-center space-x-3 min-w-0">
                         <div className={`w-9 text-center font-black ${gold ? 'text-amber-400' : 'text-slate-500'}`}>#{w.rank}</div>
+                        {(() => { const acc = registeredUsers.find(x => x.uid === (w.accountUid || '').trim()); return (
+                          <div className="w-9 h-9 rounded-full bg-slate-800 overflow-hidden flex items-center justify-center text-xs font-black flex-shrink-0">
+                            {acc && acc.avatar ? <img src={acc.avatar} alt="" className="w-full h-full object-cover" /> : String((acc && acc.name) || w.name || '?').charAt(0)}
+                          </div>); })()}
                         <div className="min-w-0">
                           <p className={`text-sm font-bold truncate ${gold ? 'text-amber-300' : ''}`}>{w.name}</p>
                           <p className="text-[11px] text-slate-400">{parseInt(w.points, 10) || 0} kills</p>
@@ -5987,7 +6249,7 @@ ${buildUserContextBrief(uid)}`;
               <div className="w-11 h-11 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center"><Trophy className="w-5 h-5 text-amber-400" /></div>
               <div>
                 <h2 className="text-xl font-black leading-tight">Results</h2>
-                <p className="text-[10px] text-slate-500 tracking-widest">ALL PUBLISHED MATCH RESULTS (LAST 24 HOURS)</p>
+                <p className="text-[10px] text-slate-500 tracking-widest">TODAY'S PUBLISHED MATCH RESULTS</p>
               </div>
             </div>
             <div className="flex space-x-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: 'touch' }}>
@@ -5997,7 +6259,7 @@ ${buildUserContextBrief(uid)}`;
               ))}
             </div>
             {shown.length === 0 ? (
-              <p className="text-xs text-slate-500 text-center py-12">Ekhon kono result nei. Notun result ashle ekhane dekha jabe.</p>
+              <p className="text-xs text-slate-500 text-center py-12">Ajker kono result nei. Notun result ashle ekhane dekha jabe.</p>
             ) : shown.map(it => (
               <div key={it.id} className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-3`}>
                 <div className="flex items-start justify-between">
@@ -6023,6 +6285,132 @@ ${buildUserContextBrief(uid)}`;
                 <button onClick={() => setResultsDetailId(it.id)} className="w-full pt-2 border-t border-slate-800/60 text-sm font-semibold text-blue-400">View Result &gt;</button>
               </div>
             ))}
+          </div>
+        );
+      })()}
+
+      {activeTab === 'urtbv' && (() => {
+        const social = urtbv.social || {};
+        const platforms = [['youtube', 'YouTube', 'bg-red-600'], ['tiktok', 'TikTok', 'bg-slate-900 border border-slate-600'], ['facebook', 'Facebook', 'bg-blue-600']];
+        const backBtn = (to) => (<button onClick={() => setUrtbvView(to)} className="flex items-center space-x-1 text-xs text-slate-400"><ArrowLeft className="w-4 h-4" /><span>Back</span></button>);
+        const cardBase = `${t.card} border ${t.border} rounded-2xl`;
+
+        if (urtbvView === 'videos') {
+          const vids = [...(urtbv.videos || [])].filter(v => v.enabled !== false).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+          return (
+            <div className="p-4 space-y-4">
+              {backBtn('menu')}
+              <h2 className="text-lg font-black">Daily Tour Best Time</h2>
+              {vids.length === 0 ? <p className="text-xs text-slate-500 text-center py-10">Ekhono kono video nei.</p> : vids.map(v => (
+                <div key={v.id} onClick={() => setVideoPlayer(v)} className={`${cardBase} overflow-hidden cursor-pointer`}>
+                  <div className="relative bg-slate-800" style={{ aspectRatio: '16/9' }}>
+                    {v.thumb ? <img src={v.thumb} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">No thumbnail</div>}
+                    <div className="absolute inset-0 flex items-center justify-center"><div className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center"><svg width="18" height="18" viewBox="0 0 12 12" fill="white"><path d="M2 1l9 5-9 5z" /></svg></div></div>
+                  </div>
+                  <div className="p-3"><p className="text-sm font-bold">{v.title || 'Untitled'}</p><p className="text-[10px] text-slate-500">{v.date}</p></div>
+                </div>
+              ))}
+            </div>
+          );
+        }
+
+        if (urtbvView === 'about') {
+          const items = [...(urtbv.about || [])].filter(b => b.enabled !== false).sort((a, b) => (Number(a.order) || 999) - (Number(b.order) || 999));
+          return (
+            <div className="p-4 space-y-4">
+              {backBtn('menu')}
+              <h2 className="text-lg font-black">App Somporke Bistarito Janun</h2>
+              {items.length === 0 ? <p className="text-xs text-slate-500 text-center py-10">Ekhono kono content nei.</p> : items.map(b => (
+                <div key={b.id} className={`${cardBase} overflow-hidden`}>
+                  {b.image && <img src={b.image} alt="" className="w-full object-cover" style={{ aspectRatio: '667/340' }} />}
+                  <div className="p-3 space-y-2">
+                    {b.title && <p className="text-sm font-black">{b.title}</p>}
+                    {b.description && <p className="text-xs text-slate-400 whitespace-pre-line">{b.description}</p>}
+                    {b.link && <button onClick={() => openExternal(b.link)} className="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold">Click and See</button>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        }
+
+        if (urtbvView === 'teams') {
+          const q = teamSearch.trim().toLowerCase();
+          const list = teamProfiles
+            .filter(x => x.enabled !== false && x.verified)
+            .filter(x => teamRoleFilter === 'All' || x.role === teamRoleFilter)
+            .filter(x => !q || [x.name, x.role, x.title].some(f => String(f || '').toLowerCase().includes(q)))
+            .sort((a, b) => (b.updatedAtMs || 0) - (a.updatedAtMs || 0));
+          const mine = teamProfiles.find(x => x.uid === user.uid);
+          return (
+            <div className="p-4 space-y-4">
+              {backBtn('menu')}
+              <h2 className="text-lg font-black">Team / Player Khunjun</h2>
+              <button onClick={openTeamForm} className="w-full py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-xs font-bold">{mine ? 'Edit My Team / Player Profile' : 'Create Team / Player'}</button>
+              <div className={`${t.input} border rounded-xl flex items-center px-3`}>
+                <Search className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                <input value={teamSearch} onChange={(e) => setTeamSearch(e.target.value)} placeholder="Name, Role (Sniper...), Title diye khunjun" className="flex-1 bg-transparent p-2.5 text-xs outline-none" />
+              </div>
+              <div className="flex space-x-2 overflow-x-auto pb-1">
+                {['All', ...URTBV_ROLES].map(r => (
+                  <button key={r} onClick={() => setTeamRoleFilter(r)} className={`flex-shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold border ${teamRoleFilter === r ? 'bg-blue-600 border-blue-600 text-white' : t.input}`}>{r}</button>
+                ))}
+              </div>
+              {list.length === 0 ? <p className="text-xs text-slate-500 text-center py-10">Kono player/team paoa jayni.</p> : list.map(x => (
+                <div key={x.uid} className={`${cardBase} p-3 space-y-2`}>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-14 h-14 rounded-xl bg-slate-800 overflow-hidden flex items-center justify-center font-black flex-shrink-0">
+                      {x.logo ? <img src={x.logo} alt="" className="w-full h-full object-cover" /> : String(x.name || '?').charAt(0)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-black truncate flex items-center space-x-1"><span className="truncate">{x.name}</span><span className="text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded-full flex-shrink-0">{'\u2714'} Verified</span></p>
+                      <p className="text-xs text-amber-300 font-semibold truncate">{x.title}</p>
+                      <span className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-600/20 text-indigo-300 border border-indigo-500/30">{x.role}</span>
+                    </div>
+                  </div>
+                  <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-lg px-3 py-2 flex items-center justify-between text-xs`}>
+                    <span>FF UID: <b className="font-mono">{x.ffUid}</b></span>
+                    <button onClick={() => copyToClipboard(x.ffUid, 'Free Fire UID')}><Copy className="w-4 h-4 text-indigo-400" /></button>
+                  </div>
+                  <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-lg px-3 py-2 flex items-center justify-between text-xs`}>
+                    <span>WhatsApp: <b className="font-mono">{x.whatsapp}</b></span>
+                    <button onClick={() => copyToClipboard(x.whatsapp, 'WhatsApp number')}><Copy className="w-4 h-4 text-emerald-400" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        }
+
+        return (
+          <div className="p-4 space-y-4">
+            <div>
+              <h2 className="text-xl font-black">URTBV</h2>
+              <p className="text-[10px] text-slate-500 tracking-widest">VIDEOS, SOCIAL, TEAM FINDER</p>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {platforms.map(([key, label, cls]) => {
+                const pf = social[key] || {};
+                if (pf.enabled === false || !pf.link) return null;
+                return (
+                  <button key={key} onClick={() => openExternal(pf.link)} className={`${cardBase} py-4 flex flex-col items-center space-y-2`}>
+                    <div className={`w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center text-white font-black ${pf.icon ? '' : cls}`}>
+                      {pf.icon ? <img src={pf.icon} alt="" className="w-full h-full object-cover" /> : label.charAt(0)}
+                    </div>
+                    <span className="text-[11px] font-bold">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={() => setUrtbvView('videos')} className={`${cardBase} w-full p-4 flex items-center justify-between`}>
+              <span className="text-sm font-bold">Daily Tour Best Time</span><ChevronRight className="w-4 h-4 text-slate-500" />
+            </button>
+            <button onClick={() => setUrtbvView('about')} className={`${cardBase} w-full p-4 flex items-center justify-between`}>
+              <span className="text-sm font-bold">App Somporke Bistarito Janun</span><ChevronRight className="w-4 h-4 text-slate-500" />
+            </button>
+            <button onClick={() => setUrtbvView('teams')} className={`${cardBase} w-full p-4 flex items-center justify-between`}>
+              <span className="text-sm font-bold">Team / Player Khunjun</span><ChevronRight className="w-4 h-4 text-slate-500" />
+            </button>
           </div>
         );
       })()}
@@ -6381,11 +6769,11 @@ ${buildUserContextBrief(uid)}`;
         {navItems.map(item => (
           <button
             key={item.id}
-            onClick={() => { setResultsDetailId(null); setActiveTab(item.id); }}
-            className={`flex flex-col items-center space-y-1 px-2.5 py-1.5 rounded-xl transition-colors ${activeTab === item.id ? 'text-indigo-400' : 'text-slate-500'}`}
+            onClick={() => { setResultsDetailId(null); if (item.id === 'urtbv') setUrtbvView('menu'); setActiveTab(item.id); }}
+            className={`flex flex-col items-center space-y-1 px-1.5 py-1.5 rounded-xl transition-colors ${activeTab === item.id ? 'text-indigo-400' : 'text-slate-500'}`}
           >
             <item.icon className="w-5 h-5" />
-            <span className="text-[10px] font-semibold">{item.label}</span>
+            <span className="text-[9px] font-semibold">{item.label}</span>
           </button>
         ))}
       </nav>
@@ -6407,6 +6795,9 @@ ${buildUserContextBrief(uid)}`;
       {publicProfileUid && (() => {
         const p = registeredUsers.find(x=>x.uid===publicProfileUid);
         if (!p) return null;
+        const fwing = followingOf(p.uid); const fwers = followersOf(p.uid);
+        const canSeeLists = p.uid === user.uid || p.showFollowList !== false;
+        const iFollow = followingOf(user.uid).includes(p.uid);
         const st=getPlayerStats(p.uid); const ri=getCurrentRankInfo(p.uid); const ach=getPlayerAchievements(p.uid); const hist=getPlayerTournamentHistory(p.uid); const pos=getPlayerLeaderboardPosition(p.uid,'alltime'); const liked=!!profileLikeByUser[p.uid];
         return <div className="fixed inset-0 z-50 bg-black/75 flex items-end sm:items-center justify-center p-3" onClick={()=>setPublicProfileUid(null)}>
           <div className={`${t.card} w-full max-w-md max-h-[92vh] overflow-y-auto rounded-3xl border ${t.border} p-4 space-y-4`} onClick={e=>e.stopPropagation()}>
@@ -6414,6 +6805,16 @@ ${buildUserContextBrief(uid)}`;
             <div className="rounded-3xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950 via-slate-950 to-violet-950 p-5">
               <div className="flex items-center gap-3"><div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 overflow-hidden flex items-center justify-center text-white text-xl font-black">{p.avatar?<img src={p.avatar} className="w-full h-full object-cover" alt=""/>:(p.name||'U').charAt(0)}</div><div className="flex-1 min-w-0"><p className="text-[9px] text-cyan-300 font-black tracking-widest">UR FF TOUR</p><h2 className="font-black text-lg truncate">{p.name}</h2><p className="text-[10px] text-slate-400 font-mono">UID: {p.uid}</p><p className="text-[9px] text-slate-500 font-mono">FF UID: {p.ffUid || '—'}</p><button onClick={()=>setShowRankDetails(true)} className="text-xs text-cyan-300 font-black mt-1 flex items-center gap-1.5"><img src={getRankBadgeSrc(ri)} className="w-8 h-6 object-contain rounded" alt=""/>{ri.name}{ri.level ? ` ${ri.level}` : ''} • {ri.score} RP ⓘ</button></div>{p.uid!==user.uid&&<button onClick={()=>toggleProfileLike(p.uid)} className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[10px] font-black border transition-all active:scale-95 ${liked?'bg-pink-500/15 border-pink-500/40 text-pink-300':'bg-white/5 border-white/10 text-slate-300'}`}>❤️ <span>{profileLikes[p.uid]||0}</span><span>{liked?'LIKED':'LIKE'}</span></button>}</div>
               <div className="grid grid-cols-4 gap-2 mt-4">{[['🏆',st.wins],['🔥',st.kills],['🎮',st.matches],['💰',`৳${st.winnings}`]].map(([i,v])=><div key={String(i)} className="bg-black/20 rounded-xl p-2 text-center"><div>{i}</div><b className="text-xs">{v}</b></div>)}</div>
+            </div>
+            <div className={`${t.card} border ${t.border} rounded-2xl p-3 space-y-3`}>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <button onClick={() => { if (canSeeLists) setFollowListView({ uid: p.uid, type: 'following' }); else showToast('Ei user following list hide rekheche.'); }} className="rounded-xl bg-white/5 py-2"><p className="text-lg font-black">{fwing.length}</p><p className="text-[10px] text-slate-400">Following</p></button>
+                <button onClick={() => { if (canSeeLists) setFollowListView({ uid: p.uid, type: 'followers' }); else showToast('Ei user followers list hide rekheche.'); }} className="rounded-xl bg-white/5 py-2"><p className="text-lg font-black">{fwers.length}</p><p className="text-[10px] text-slate-400">Followers</p></button>
+                <div className="rounded-xl bg-white/5 py-2"><p className="text-lg font-black">{profileLikes[p.uid]||0}</p><p className="text-[10px] text-slate-400">Likes</p></div>
+              </div>
+              {p.uid !== user.uid && (
+                <button onClick={() => toggleFollow(p.uid)} className={`w-full py-2.5 rounded-xl text-xs font-bold ${iFollow ? 'bg-slate-700 text-white' : 'bg-indigo-600 text-white'}`}>{iFollow ? 'Following (Unfollow korun)' : 'Follow'}</button>
+              )}
             </div>
             <div className={`${t.card} border ${t.border} rounded-2xl p-4`}><div className="grid grid-cols-2 gap-2">{[['Leaderboard',`#${pos||'—'}`],['Likes',profileLikes[p.uid]||0],['Matches',st.matches],['Winnings',`৳${st.winnings}`]].map(([k,v])=><div key={k} className={`${darkMode?'bg-slate-950':'bg-slate-100'} rounded-xl p-3`}><p className="text-[9px] text-slate-500">{k}</p><p className="font-black text-sm mt-1">{v}</p></div>)}</div></div>
             <div className={`${t.card} border ${t.border} rounded-2xl p-4`}><p className="text-xs font-black mb-3">Achievements</p><div className="grid grid-cols-2 gap-2">{ach.map(a=><div key={a.id} className={`rounded-xl p-2 border ${a.unlocked?'border-amber-400/30':'border-slate-800 opacity-45'}`}><div className="w-9 h-9 flex items-center justify-center">{getAchievementIconSrc(a) ? <img src={getAchievementIconSrc(a)} className="w-full h-full object-contain" alt="" /> : <span className="text-lg">{a.icon}</span>}</div><p className="text-[10px] font-bold">{a.name}</p></div>)}</div></div>
@@ -6474,7 +6875,7 @@ ${buildUserContextBrief(uid)}`;
                     const ringColor = rank === 1 ? 'border-amber-400' : rank === 2 ? 'border-violet-400' : 'border-cyan-400';
                     const textColor = rank === 1 ? 'text-amber-400' : rank === 2 ? 'text-violet-400' : 'text-cyan-400';
                     return (
-                      <div key={podiumIdx} className={`${t.card} border ${ringColor} rounded-2xl p-3 text-center relative ${rank === 1 ? 'pt-6' : ''}`}>
+                      <div key={podiumIdx} onClick={() => { if (p.uid) { setShowLeaderboard(false); openPublicProfile(p.uid); } }} className={`${t.card} border ${ringColor} rounded-2xl p-3 text-center relative cursor-pointer ${rank === 1 ? 'pt-6' : ''}`}>
                         {rank === 1 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-lg">👑</span>}
                         <span className={`absolute top-1.5 right-1.5 w-5 h-5 rounded-full ${t.card} border ${ringColor} flex items-center justify-center text-[9px] font-bold ${textColor}`}>#{rank}</span>
                         <div className={`w-12 h-12 rounded-full ${darkMode ? 'bg-slate-800' : 'bg-slate-200'} border-2 ${ringColor} mx-auto flex items-center justify-center font-black text-sm overflow-hidden`}>
@@ -6490,7 +6891,7 @@ ${buildUserContextBrief(uid)}`;
 
                 <div className="space-y-2">
                   {rankedList.slice(3).map((p, idx) => (
-                    <div key={idx} className={`${t.card} border ${t.border} rounded-xl p-3 flex items-center space-x-3`}>
+                    <div key={idx} onClick={() => { if (p.uid) { setShowLeaderboard(false); openPublicProfile(p.uid); } }} className={`${t.card} border ${t.border} rounded-xl p-3 flex items-center space-x-3 cursor-pointer`}>
                       <span className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-400 flex-shrink-0">#{idx + 4}</span>
                       <div className={`w-8 h-8 rounded-full ${darkMode ? 'bg-slate-800' : 'bg-slate-200'} flex items-center justify-center font-bold text-xs flex-shrink-0 overflow-hidden`}>
                         {p.avatar ? <img src={p.avatar} alt="" className="w-full h-full object-cover" /> : String(p.name || '?').charAt(0)}
@@ -6703,6 +7104,69 @@ ${buildUserContextBrief(uid)}`;
         );
       })()}
 
+      {followListView && (() => {
+        const target = registeredUsers.find(u => u.uid === followListView.uid);
+        const allowed = followListView.uid === user.uid || (target && target.showFollowList !== false);
+        const list = !allowed ? [] : (followListView.type === 'following'
+          ? followingOf(followListView.uid).map(id => registeredUsers.find(u => u.uid === id)).filter(Boolean)
+          : followersOf(followListView.uid));
+        return (
+          <div className="fixed inset-0 z-[60] bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setFollowListView(null)}>
+            <div className={`${t.card} w-full max-w-sm max-h-[75vh] overflow-y-auto rounded-2xl p-4 space-y-3 border ${t.border}`} onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-sm capitalize">{followListView.type} ({list.length})</h3>
+                <button onClick={() => setFollowListView(null)}><X className="w-5 h-5 text-slate-400" /></button>
+              </div>
+              {!allowed ? <p className="text-xs text-slate-500 text-center py-6">Ei user list hide rekheche.</p>
+                : list.length === 0 ? <p className="text-xs text-slate-500 text-center py-6">Kono user nei.</p>
+                : list.map(u => (
+                  <div key={u.uid} onClick={() => { setFollowListView(null); openPublicProfile(u.uid); }} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl px-3 py-2 flex items-center space-x-3 cursor-pointer`}>
+                    <div className="w-9 h-9 rounded-full bg-slate-800 overflow-hidden flex items-center justify-center text-xs font-black">{u.avatar ? <img src={u.avatar} alt="" className="w-full h-full object-cover" /> : String(u.name || '?').charAt(0)}</div>
+                    <p className="text-xs font-bold truncate">{u.name}</p>
+                  </div>
+                ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {videoPlayer && (() => {
+        const emb = _youtubeEmbed(videoPlayer.link);
+        return (
+          <div className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-3" onClick={() => setVideoPlayer(null)}>
+            <div className="w-full max-w-md space-y-2" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between text-white"><p className="text-sm font-bold truncate">{videoPlayer.title}</p><button onClick={() => setVideoPlayer(null)}><X className="w-6 h-6" /></button></div>
+              <div className="bg-black rounded-xl overflow-hidden" style={{ aspectRatio: '16/9' }}>
+                {emb ? <iframe src={emb} title="video" className="w-full h-full" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen />
+                  : _isDirectVideo(videoPlayer.link) ? <video src={videoPlayer.link} controls autoPlay playsInline className="w-full h-full" />
+                  : <div className="w-full h-full flex flex-col items-center justify-center text-white text-xs space-y-3 p-4 text-center"><p>Ei link app e chalano jay na.</p><button onClick={() => openExternal(videoPlayer.link)} className="px-4 py-2 bg-indigo-600 rounded-lg font-bold">Link e kholen</button></div>}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showTeamForm && (
+        <div className="fixed inset-0 z-[60] bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setShowTeamForm(false)}>
+          <div className={`${t.card} w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-2xl p-5 space-y-3 border ${t.border}`} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between"><h3 className="font-bold text-sm">Create Team / Player</h3><button onClick={() => setShowTeamForm(false)}><X className="w-5 h-5 text-slate-400" /></button></div>
+            <div className="flex items-center space-x-3">
+              <div className="w-16 h-16 rounded-xl bg-slate-800 overflow-hidden flex items-center justify-center font-black">{tf.logo ? <img src={tf.logo} alt="" className="w-full h-full object-cover" /> : <Upload className="w-5 h-5 text-slate-500" />}</div>
+              <label className={`flex-1 text-center py-3 ${t.input} border border-dashed rounded-xl text-xs font-bold cursor-pointer`}>Team Logo Upload<input type="file" accept="image/*" className="hidden" onChange={pickImage((v) => setTf(prev => ({ ...prev, logo: v })))} /></label>
+            </div>
+            <input value={tf.ffUid} onChange={(e) => setTf({ ...tf, ffUid: e.target.value })} placeholder="Free Fire UID" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
+            <input value={tf.whatsapp} onChange={(e) => setTf({ ...tf, whatsapp: e.target.value })} placeholder="WhatsApp Number" inputMode="tel" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
+            <input value={tf.name} onChange={(e) => setTf({ ...tf, name: e.target.value })} placeholder="Name (Player / Team)" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
+            <div>
+              <p className="text-[10px] text-slate-500 mb-1">Role</p>
+              <div className="flex flex-wrap gap-2">{URTBV_ROLES.map(r => (<button key={r} type="button" onClick={() => setTf({ ...tf, role: r })} className={`px-3 py-1.5 rounded-full text-[11px] font-bold border ${tf.role === r ? 'bg-indigo-600 border-indigo-600 text-white' : t.input}`}>{r}</button>))}</div>
+            </div>
+            <input value={tf.title} onChange={(e) => setTf({ ...tf, title: e.target.value })} placeholder="Title (e.g. Sniper Needed)" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
+            <button onClick={saveTeamProfile} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">SAVE & VERIFY</button>
+          </div>
+        </div>
+      )}
+
       {showAppDeveloper && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setShowAppDeveloper(false)}>
           <div className={`${t.card} w-full max-w-sm rounded-2xl p-5 space-y-4 border ${t.border}`} onClick={(e) => e.stopPropagation()}>
@@ -6871,6 +7335,15 @@ ${buildUserContextBrief(uid)}`;
               <div>
                 <label className="text-[10px] text-slate-500 flex items-center space-x-1.5"><Gamepad2 className="w-3.5 h-3.5" /><span>FREE FIRE UID</span></label>
                 <input value={profileFfUidInput} onChange={(e) => setProfileFfUidInput(e.target.value)} placeholder="Your game UID" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1.5`} />
+                <div className="flex items-center justify-between mt-3">
+                  <div className="pr-3">
+                    <p className="text-xs font-bold">Show Following & Followers List</p>
+                    <p className="text-[10px] text-slate-500">OFF korle onno ra shudhu sonkha dekhbe, list dekhbe na.</p>
+                  </div>
+                  <button type="button" onClick={() => setProfileShowFollowInput(v => !v)} className={`w-11 h-6 rounded-full relative transition-colors flex-shrink-0 ${profileShowFollowInput ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                    <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-all ${profileShowFollowInput ? 'right-0.5' : 'left-0.5'}`} />
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="text-[10px] text-slate-500">EMAIL (CANNOT CHANGE)</label>
