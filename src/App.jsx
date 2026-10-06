@@ -16,22 +16,42 @@ const _youtubeEmbed = (url) => {
 const _isDirectVideo = (url) => /\.(mp4|webm|ogg|mov)(?:$|[?#])/i.test(String(url || ''));
 
 // ---------- Banner video player (custom controls: play/pause, seek, mute) ----------
-function BannerVideo({ src, onEnded }) {
+function BannerVideo({ src, onEnded, onOpenLink }) {
   const vref = useRef(null);
   const [playing, setPlaying] = useState(true);
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(false);
+  const [showCtl, setShowCtl] = useState(false);
   const [cur, setCur] = useState(0);
   const [dur, setDur] = useState(0);
   const stop = (e) => e.stopPropagation();
-  const togglePlay = (e) => {
+  // Try to start WITH sound. If the browser blocks it, start muted and unmute on the first tap anywhere.
+  useEffect(() => {
+    const v = vref.current;
+    if (!v) return undefined;
+    let armed = false;
+    const unmute = () => {
+      if (v.muted) { v.muted = false; setMuted(false); }
+      ['pointerdown', 'touchend', 'click', 'keydown'].forEach(ev => window.removeEventListener(ev, unmute, true));
+      armed = false;
+    };
+    v.muted = false; setMuted(false);
+    const pr = v.play();
+    if (pr && pr.catch) {
+      pr.catch(() => {
+        v.muted = true; setMuted(true);
+        const r2 = v.play(); if (r2 && r2.catch) r2.catch(() => {});
+        armed = true;
+        ['pointerdown', 'touchend', 'click', 'keydown'].forEach(ev => window.addEventListener(ev, unmute, true));
+      });
+    }
+    return () => { if (armed) ['pointerdown', 'touchend', 'click', 'keydown'].forEach(ev => window.removeEventListener(ev, unmute, true)); };
+  }, [src]);
+  const togglePlay = (e) => { e.stopPropagation(); const v = vref.current; if (!v) return; if (v.paused) { const pr = v.play(); if (pr && pr.catch) pr.catch(() => {}); } else v.pause(); };
+  const toggleMute = (e) => { e.stopPropagation(); const v = vref.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted); };
+  const goFull = (e) => {
     e.stopPropagation();
     const v = vref.current; if (!v) return;
-    if (v.paused) { const pr = v.play(); if (pr && pr.catch) pr.catch(() => {}); } else v.pause();
-  };
-  const toggleMute = (e) => {
-    e.stopPropagation();
-    const v = vref.current; if (!v) return;
-    v.muted = !v.muted; setMuted(v.muted);
+    try { if (v.requestFullscreen) v.requestFullscreen(); else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen(); else if (v.webkitRequestFullscreen) v.webkitRequestFullscreen(); } catch {}
   };
   const fmt = (n) => { n = Math.max(0, Math.floor(n || 0)); return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`; };
   return (
@@ -40,10 +60,8 @@ function BannerVideo({ src, onEnded }) {
         ref={vref}
         src={src}
         className="absolute inset-0 w-full h-full object-cover"
-        autoPlay
-        muted
         playsInline
-        preload="metadata"
+        preload="auto"
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onTimeUpdate={(e) => setCur(e.currentTarget.currentTime)}
@@ -51,27 +69,37 @@ function BannerVideo({ src, onEnded }) {
         onEnded={() => { if (onEnded) onEnded(); }}
         onError={() => { if (onEnded) setTimeout(onEnded, 2500); }}
       />
-      <div
-        className="absolute left-0 right-0 bottom-0 z-10 px-2 pb-1.5 pt-4 bg-gradient-to-t from-black/70 to-transparent flex items-center space-x-2"
-        onClick={stop} onTouchStart={stop} onTouchEnd={stop} onTouchMove={stop} onMouseDown={stop} onMouseUp={stop}
-      >
-        <button type="button" onClick={togglePlay} className="w-7 h-7 flex items-center justify-center rounded-full bg-black/50 text-white flex-shrink-0">
-          {playing
-            ? <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="1" width="3" height="10" /><rect x="7" y="1" width="3" height="10" /></svg>
-            : <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M2 1l9 5-9 5z" /></svg>}
-        </button>
-        <input
-          type="range" min="0" max={dur || 0} step="0.1" value={cur}
-          onChange={(e) => { const v = vref.current; if (v) { v.currentTime = Number(e.target.value); setCur(Number(e.target.value)); } }}
-          className="flex-1 h-1 accent-white"
-        />
-        <span className="text-[9px] text-white/80 font-mono flex-shrink-0">{fmt(cur)}/{fmt(dur)}</span>
-        <button type="button" onClick={toggleMute} className="w-7 h-7 flex items-center justify-center rounded-full bg-black/50 text-white flex-shrink-0">
-          {muted
-            ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg>
-            : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 010 7" /><path d="M19 5a10 10 0 010 14" /></svg>}
-        </button>
-      </div>
+      {/* Tap the video: controls show. Tap again: controls hide. */}
+      <div className="absolute inset-0 z-[5]" onClick={(e) => { e.stopPropagation(); setShowCtl(v => !v); }} />
+      {showCtl && (
+        <div
+          className="absolute left-0 right-0 bottom-0 z-10 px-2 pb-1.5 pt-5 bg-gradient-to-t from-black/75 to-transparent flex items-center space-x-2"
+          onClick={stop} onTouchStart={stop} onTouchEnd={stop} onTouchMove={stop} onMouseDown={stop} onMouseUp={stop}
+        >
+          <button type="button" onClick={togglePlay} className="w-8 h-8 flex items-center justify-center rounded-full bg-black/50 text-white flex-shrink-0">
+            {playing
+              ? <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="1" width="3" height="10" /><rect x="7" y="1" width="3" height="10" /></svg>
+              : <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M2 1l9 5-9 5z" /></svg>}
+          </button>
+          <input
+            type="range" min="0" max={dur || 0} step="0.1" value={cur}
+            onChange={(e) => { const v = vref.current; if (v) { v.currentTime = Number(e.target.value); setCur(Number(e.target.value)); } }}
+            className="flex-1 h-1 accent-white min-w-0"
+          />
+          <span className="text-[9px] text-white/80 font-mono flex-shrink-0">{fmt(cur)}/{fmt(dur)}</span>
+          <button type="button" onClick={toggleMute} className="w-8 h-8 flex items-center justify-center rounded-full bg-black/50 text-white flex-shrink-0">
+            {muted
+              ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg>
+              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 010 7" /><path d="M19 5a10 10 0 010 14" /></svg>}
+          </button>
+          <button type="button" onClick={goFull} className="w-8 h-8 flex items-center justify-center rounded-full bg-black/50 text-white flex-shrink-0">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 00-2 2v3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3" /></svg>
+          </button>
+          {onOpenLink && (
+            <button type="button" onClick={(e) => { e.stopPropagation(); onOpenLink(); }} className="px-2 h-8 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex-shrink-0">Link</button>
+          )}
+        </div>
+      )}
     </>
   );
 }
@@ -216,7 +244,7 @@ if (typeof document !== 'undefined') {
 
 import { getToken } from 'firebase/messaging';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { collection, doc, getDocs, setDoc, updateDoc, increment, deleteDoc, addDoc, onSnapshot, runTransaction } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, updateDoc, increment, deleteDoc, addDoc, onSnapshot, runTransaction, arrayUnion, arrayRemove } from 'firebase/firestore';
 
 
 const LOGO_URL = 'data:image/jpeg;base64,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';
@@ -531,22 +559,32 @@ export default function App() {
   const [checkInBonusDays, setCheckInBonusDays] = useState(0); // lifetime bonus days used (max 4)
   const [lastCheckInMs, setLastCheckInMs] = useState(0);
 
+  // Live, authoritative check-in state from Firestore. Until the first server answer arrives
+  // (slow network), NO claim UI is shown, so an old/cached "claim" button can never appear.
+  const [checkInLoaded, setCheckInLoaded] = useState(false);
+  const _checkInBusyRef = useRef(false);
+  const _ciKey = (uid) => `urff_checkin_done_${uid}`;
+  const [checkInCachedDone, setCheckInCachedDone] = useState(false);
   useEffect(() => {
     if (!user.uid) return;
-    getDocs(collection(db, 'checkins')).then(snap => {
-      const doc1 = snap.docs.find(d => d.id === user.uid);
-      if (doc1) {
-        const data = doc1.data();
-        setCheckInBonusDays(data.bonusDays || 0);
-        setCheckInStreak(data.streak || 0);
-        setLastCheckInMs(data.lastCheckInMs || 0);
-        const hoursSince = (Date.now() - (data.lastCheckInMs || 0)) / (1000 * 60 * 60);
-        setCheckedInToday(hoursSince < 24);
-      }
-    }).catch(e => console.error(e));
+    setCheckInLoaded(false);
+    try { setCheckInCachedDone(localStorage.getItem(_ciKey(user.uid)) === '1'); } catch { setCheckInCachedDone(false); }
+    const unsub = onSnapshot(doc(db, 'checkins', user.uid), (snap) => {
+      const data = snap.exists() ? snap.data() : {};
+      const bd = data.bonusDays || 0;
+      setCheckInBonusDays(bd);
+      setCheckInStreak(data.streak || 0);
+      setLastCheckInMs(data.lastCheckInMs || 0);
+      setCheckedInToday((Date.now() - (data.lastCheckInMs || 0)) / (1000 * 60 * 60) < 24);
+      if (bd >= 4) { try { localStorage.setItem(_ciKey(user.uid), '1'); } catch {} setCheckInCachedDone(true); }
+      setCheckInLoaded(true);
+    }, (e) => console.error('Check-in listen error:', e));
+    return () => unsub();
   }, [user.uid]);
   const CHECKIN_DAILY_REWARD = 2;
   const CHECKIN_BONUS_LIMIT = 4;
+  // true once all 4 bonus days are claimed: no claim UI at all (also remembered offline as a safety net).
+  const checkInDone = checkInCachedDone || (checkInLoaded && checkInBonusDays >= CHECKIN_BONUS_LIMIT);
   const [toastMessage, setToastMessage] = useState(null);
 
   // Modals & Forms
@@ -1893,6 +1931,21 @@ export default function App() {
   }, [automatedTemplates, tournaments]);
 
   // ================= Date-based filtering =================
+  // ================= Language (EN / BN) =================
+  const [lang, setLangState] = useState(() => { try { return localStorage.getItem('urff_lang') === 'bn' ? 'bn' : 'en'; } catch { return 'en'; } });
+  const setLang = (l) => {
+    setLangState(l);
+    try { localStorage.setItem('urff_lang', l); } catch {}
+    if (user.uid) updateDoc(doc(db, 'users', user.uid), { lang: l }).catch(() => {});
+  };
+  const tr = (en, bn) => (lang === 'bn' ? bn : en);
+  useEffect(() => {
+    if (!user.uid) return;
+    try { if (localStorage.getItem('urff_lang')) return; } catch {}
+    const me = registeredUsers.find(u => u.uid === user.uid);
+    if (me && (me.lang === 'bn' || me.lang === 'en')) setLangState(me.lang);
+  }, [user.uid, registeredUsers]);
+
   const [todayKey, setTodayKey] = useState(() => _dateKey());
   useEffect(() => {
     const id = setInterval(() => setTodayKey(_dateKey()), 30000);
@@ -1915,7 +1968,7 @@ export default function App() {
     setRegisteredUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, following: next } : u));
     setUser(prev => ({ ...prev, following: next }));
     playSound('like');
-    try { await updateDoc(doc(db, 'users', user.uid), { following: next }); }
+    try { await updateDoc(doc(db, 'users', user.uid), { following: cur.includes(targetUid) ? arrayRemove(targetUid) : arrayUnion(targetUid) }); }
     catch (e) { console.error('Follow save error:', e); showToast('Follow save fail: ' + (e && e.code ? e.code : 'error')); }
   };
   const [profileShowFollowInput, setProfileShowFollowInput] = useState(true);
@@ -1954,6 +2007,13 @@ export default function App() {
   const [af, setAf] = useState({ id: '', title: '', image: '', description: '', link: '', order: '' });
 
   // ================= Player / Team profiles =================
+  const [playerProfiles, setPlayerProfiles] = useState([]);
+  const [joinRequests, setJoinRequests] = useState([]);
+  useEffect(() => {
+    const u1 = onSnapshot(collection(db, 'playerProfiles'), (snap) => setPlayerProfiles(snap.docs.map(d => ({ ...d.data(), uid: d.data().uid || d.id }))), (e) => console.error('playerProfiles listen error:', e));
+    const u2 = onSnapshot(collection(db, 'joinRequests'), (snap) => setJoinRequests(snap.docs.map(d => ({ ...d.data(), id: d.id }))), (e) => console.error('joinRequests listen error:', e));
+    return () => { u1(); u2(); };
+  }, []);
   const [teamProfiles, setTeamProfiles] = useState([]);
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'teamProfiles'), (snap) => {
@@ -1963,35 +2023,133 @@ export default function App() {
   }, []);
   const [teamSearch, setTeamSearch] = useState('');
   const [teamRoleFilter, setTeamRoleFilter] = useState('All');
+  const [teamPlayerTab, setTeamPlayerTab] = useState('teams'); // teams | players
+  const [teamDetailUid, setTeamDetailUid] = useState(null);
+  const [imageViewer, setImageViewer] = useState(null);
   const [showTeamForm, setShowTeamForm] = useState(false);
-  const [tf, setTf] = useState({ ffUid: '', whatsapp: '', name: '', role: '', logo: '', title: '' });
+  const [showPlayerForm, setShowPlayerForm] = useState(false);
+  const EMPTY_MEMBER = { id: '', name: '', role: '', ffUid: '', screenshot: '' };
+  const [tf, setTf] = useState({ ffUid: '', whatsapp: '', name: '', logo: '', title: '', members: [], needRoles: [] });
+  const [pf, setPf] = useState({ name: '', ffUid: '', whatsapp: '', photo: '', shot: '', roles: [], title: '' });
+
+  // ---- validation helpers ----
+  const validFfUid = (v) => /^\d{6,15}$/.test(String(v || '').trim());
+  const cleanWa = (v) => String(v || '').replace(/[\s-]/g, '');
+  const validWa = (v) => /^\+?\d{10,15}$/.test(cleanWa(v));
+  const pickImageChecked = (cb, maxW = 500, q = 0.7) => (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    if (!/^image\//.test(f.type)) { showToast('Shudhu image file din (JPG/PNG)'); return; }
+    if (f.size > 8 * 1024 * 1024) { showToast('Image 8MB er cheye boro. Choto image din.'); return; }
+    compressImage(f, maxW, q).then(cb).catch(() => showToast('Image load fail'));
+  };
+  const pushNotif = (targetUid, title, message) => setUserNotifications(prev => [{ id: 'not_' + Date.now() + Math.random(), title, message, time: 'Just now', targetUid }, ...prev]);
+
+  // ---- Team (create / edit) ----
   const openTeamForm = () => {
     const mine = teamProfiles.find(x => x.uid === user.uid);
     setTf(mine
-      ? { ffUid: mine.ffUid || '', whatsapp: mine.whatsapp || '', name: mine.name || '', role: mine.role || '', logo: mine.logo || '', title: mine.title || '' }
-      : { ffUid: user.ffUid || '', whatsapp: '', name: user.name || '', role: '', logo: '', title: '' });
+      ? { ffUid: mine.ffUid || '', whatsapp: mine.whatsapp || '', name: mine.name || '', logo: mine.logo || '', title: mine.title || '', members: Array.isArray(mine.members) ? mine.members : [], needRoles: Array.isArray(mine.needRoles) ? mine.needRoles : [] }
+      : { ffUid: user.ffUid || '', whatsapp: '', name: '', logo: '', title: '', members: [], needRoles: [] });
     setShowTeamForm(true);
   };
   const saveTeamProfile = async () => {
-    const d = { ffUid: tf.ffUid.trim(), whatsapp: tf.whatsapp.trim(), name: tf.name.trim(), role: tf.role, title: tf.title.trim(), logo: tf.logo || '' };
-    if (!d.ffUid || !d.whatsapp || !d.name || !d.role || !d.title) { showToast('Shob field puron korun (UID, WhatsApp, Name, Role, Title)'); return; }
+    const name = tf.name.trim(), title = tf.title.trim();
+    if (!name || !title) { showToast('Team Name ebong Title din'); return; }
+    if (!validFfUid(tf.ffUid)) { showToast('Free Fire UID shothik din (6-15 digit, shudhu number)'); return; }
+    if (!validWa(tf.whatsapp)) { showToast('WhatsApp number shothik din (10-15 digit)'); return; }
+    if (tf.needRoles.length === 0) { showToast('Kon Role er player lagbe seta select korun'); return; }
+    for (const m of tf.members) {
+      if (!m.name.trim() || !m.role) { showToast('Prottek existing player er Name ebong Role din'); return; }
+      if (!validFfUid(m.ffUid)) { showToast(`"${m.name || 'Player'}" er Free Fire UID shothik din`); return; }
+    }
     const mine = teamProfiles.find(x => x.uid === user.uid);
+    const members = tf.members.map((m, i) => ({ id: m.id || ('m_' + Date.now() + '_' + i), name: m.name.trim(), role: m.role, ffUid: m.ffUid.trim(), screenshot: m.screenshot || '' }));
     const payload = {
-      ...d, uid: user.uid, ownerName: user.name,
+      ffUid: tf.ffUid.trim(), whatsapp: cleanWa(tf.whatsapp), name, title, logo: tf.logo || '',
+      members, needRoles: tf.needRoles,
+      role: (members[0] && members[0].role) || (mine && mine.role) || tf.needRoles[0] || '',
+      uid: user.uid, ownerName: user.name, type: 'team',
       verified: !(mine && mine.adminVerifyOff === true),
       enabled: mine ? mine.enabled !== false : true,
       adminVerifyOff: !!(mine && mine.adminVerifyOff),
       createdAtMs: (mine && mine.createdAtMs) || Date.now(), updatedAtMs: Date.now(),
     };
-    try { await setDoc(doc(db, 'teamProfiles', user.uid), payload); setShowTeamForm(false); playSound('success'); showToast('Profile save hoyeche! Verification successful.'); }
-    catch (e) { console.error(e); showToast('Save fail: ' + (e && e.code ? e.code : 'error')); }
+    try { await setDoc(doc(db, 'teamProfiles', user.uid), payload, { merge: true }); setShowTeamForm(false); playSound('success'); showToast('Team save hoyeche!'); }
+    catch (e) { console.error(e); showToast('Save fail: ' + (e && e.code ? e.code : 'error') + ' (image boro hole choto korun)'); }
   };
+
+  // ---- Player (create / edit, needs admin approval) ----
+  const myPlayer = playerProfiles.find(x => x.uid === user.uid);
+  const openPlayerForm = () => {
+    setPf(myPlayer
+      ? { name: myPlayer.name || '', ffUid: myPlayer.ffUid || '', whatsapp: myPlayer.whatsapp || '', photo: myPlayer.photo || '', shot: myPlayer.shot || '', roles: Array.isArray(myPlayer.roles) ? myPlayer.roles : [], title: myPlayer.title || '' }
+      : { name: user.name || '', ffUid: user.ffUid || '', whatsapp: '', photo: user.avatar || '', shot: '', roles: [], title: '' });
+    setShowPlayerForm(true);
+  };
+  const savePlayerProfile = async () => {
+    const d = { name: pf.name.trim(), title: pf.title.trim() };
+    if (!d.name || !d.title) { showToast('Player Name ebong Title din'); return; }
+    if (!validFfUid(pf.ffUid)) { showToast('Free Fire UID shothik din (6-15 digit, shudhu number)'); return; }
+    if (!validWa(pf.whatsapp)) { showToast('WhatsApp number shothik din (10-15 digit)'); return; }
+    if (!pf.photo) { showToast('Apnar Photo din'); return; }
+    if (!pf.shot) { showToast('Free Fire ID Screenshot din'); return; }
+    if (pf.roles.length === 0) { showToast('Kom kore ekta Role select korun'); return; }
+    if (playerProfiles.some(x => x.uid !== user.uid && String(x.ffUid) === pf.ffUid.trim())) { showToast('Ei Free Fire UID diye already onno profile ache.'); return; }
+    const changedKey = !myPlayer || myPlayer.ffUid !== pf.ffUid.trim() || myPlayer.shot !== pf.shot;
+    const status = (!myPlayer || changedKey || myPlayer.status === 'rejected') ? 'pending' : (myPlayer.status || 'pending');
+    const payload = {
+      ...d, ffUid: pf.ffUid.trim(), whatsapp: cleanWa(pf.whatsapp), photo: pf.photo, shot: pf.shot, roles: pf.roles,
+      uid: user.uid, ownerName: user.name, status, enabled: myPlayer ? myPlayer.enabled !== false : true,
+      createdAtMs: (myPlayer && myPlayer.createdAtMs) || Date.now(), updatedAtMs: Date.now(),
+    };
+    try {
+      await setDoc(doc(db, 'playerProfiles', user.uid), payload, { merge: true });
+      setShowPlayerForm(false); playSound('success');
+      showToast(status === 'approved' ? 'Player profile update hoyeche!' : 'Profile pathano hoyeche. Admin review er por Approved hobe.');
+    } catch (e) { console.error(e); showToast('Save fail: ' + (e && e.code ? e.code : 'error') + ' (image boro hole choto korun)'); }
+  };
+
+  // ---- Join requests ----
+  const requestJoin = async (team, role) => {
+    if (team.uid === user.uid) { showToast('Nijer team e apply kora jay na.'); return; }
+    if (!myPlayer || myPlayer.status !== 'approved') { showToast('Age Player profile baniye Admin approval nin.'); return; }
+    if (!role) { showToast('Kon Role e apply korben seta select korun'); return; }
+    const id = `${team.uid}_${user.uid}`;
+    const ex = joinRequests.find(r => r.id === id);
+    if (ex && ex.status === 'pending') { showToast('Apnar request already pending ache.'); return; }
+    if (ex && ex.status === 'accepted') { showToast('Apnar request already accept hoyeche.'); return; }
+    try {
+      await setDoc(doc(db, 'joinRequests', id), { id, teamUid: team.uid, playerUid: user.uid, role, status: 'pending', createdAtMs: (ex && ex.createdAtMs) || Date.now(), updatedAtMs: Date.now() });
+      pushNotif(team.uid, 'New Join Request', `${myPlayer.name} apnar team "${team.name}" e ${role} hishebe join korte chaichen.`);
+      playSound('success'); showToast('Request pathano hoyeche!');
+    } catch (e) { console.error(e); showToast('Request fail: ' + (e && e.code ? e.code : 'error')); }
+  };
+  const respondJoin = async (req, status) => {
+    try {
+      await updateDoc(doc(db, 'joinRequests', req.id), { status, updatedAtMs: Date.now() });
+      const tm = teamProfiles.find(x => x.uid === req.teamUid);
+      pushNotif(req.playerUid, status === 'accepted' ? 'Join Request Accepted' : 'Join Request Rejected', `${tm ? tm.name : 'Team'} apnar ${req.role} request ${status === 'accepted' ? 'accept' : 'reject'} korechen.`);
+      showToast(status === 'accepted' ? 'Accepted' : 'Rejected');
+    } catch (e) { console.error(e); showToast('Update fail: ' + (e && e.code ? e.code : 'error')); }
+  };
+
+  // ---- Admin actions ----
   const adminPatchTeam = async (uid, patch) => {
     try { await updateDoc(doc(db, 'teamProfiles', uid), patch); showToast('Update kora hoyeche!'); }
     catch (e) { console.error(e); showToast('Update fail: ' + (e && e.code ? e.code : 'error')); }
   };
   const adminDeleteTeam = async (uid) => {
     try { await deleteDoc(doc(db, 'teamProfiles', uid)); showToast('Profile delete kora hoyeche!'); }
+    catch (e) { console.error(e); showToast('Delete fail: ' + (e && e.code ? e.code : 'error')); }
+  };
+  const adminPatchPlayer = async (uid, patch, notifyMsg) => {
+    try { await updateDoc(doc(db, 'playerProfiles', uid), { ...patch, updatedAtMs: Date.now() }); if (notifyMsg) pushNotif(uid, 'Player Profile', notifyMsg); showToast('Update kora hoyeche!'); }
+    catch (e) { console.error(e); showToast('Update fail: ' + (e && e.code ? e.code : 'error')); }
+  };
+  const adminDeletePlayer = async (uid) => {
+    try { await deleteDoc(doc(db, 'playerProfiles', uid)); showToast('Player delete kora hoyeche!'); }
     catch (e) { console.error(e); showToast('Delete fail: ' + (e && e.code ? e.code : 'error')); }
   };
 
@@ -2237,30 +2395,37 @@ export default function App() {
     }
   }, [registeredUsers, user.uid, activeTab, hasActiveSession, nowTick]);
 
-  const handleCheckIn = () => {
-    const hoursSince = (Date.now() - lastCheckInMs) / (1000 * 60 * 60);
-    if (hoursSince < 24) {
-      showToast('Ajke apni already check-in korechen! 24 ghonta por abar asun.');
+  const handleCheckIn = async () => {
+    if (_checkInBusyRef.current) return;
+    if (!checkInLoaded || checkInDone) { setShowCheckInModal(false); return; }
+    _checkInBusyRef.current = true;
+    try {
+      const ref = doc(db, 'checkins', user.uid);
+      const nowMs = Date.now();
+      // Transaction = the server decides. Two taps / two devices / slow network can never claim twice.
+      const res = await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref);
+        const d = snap.exists() ? snap.data() : {};
+        const bonusDays = d.bonusDays || 0;
+        if (bonusDays >= CHECKIN_BONUS_LIMIT) return { ok: false, reason: 'limit' };
+        if ((nowMs - (d.lastCheckInMs || 0)) / (1000 * 60 * 60) < 24) return { ok: false, reason: 'wait' };
+        tx.set(ref, { bonusDays: bonusDays + 1, streak: (d.streak || 0) + 1, lastCheckInMs: nowMs });
+        return { ok: true, bonusDays: bonusDays + 1 };
+      });
+      if (!res.ok) {
+        showToast(res.reason === 'limit' ? 'Check-in bonus shesh hoye geche.' : 'Ajke apni already check-in korechen! 24 ghonta por abar asun.');
+      } else {
+        applyBalanceChange(user.uid, { winning: CHECKIN_DAILY_REWARD });
+        if (res.bonusDays >= CHECKIN_BONUS_LIMIT) { try { localStorage.setItem(_ciKey(user.uid), '1'); } catch {} setCheckInCachedDone(true); }
+        showToast(`+\u09f3${CHECKIN_DAILY_REWARD} check-in bonus peyechen!`);
+      }
+    } catch (e) {
+      console.error('Check-in error:', e);
+      showToast('Check-in fail: internet check korun ebong abar chesta korun.');
+    } finally {
+      _checkInBusyRef.current = false;
       setShowCheckInModal(false);
-      return;
     }
-    if (checkInBonusDays >= CHECKIN_BONUS_LIMIT) {
-      showToast(`Apni maximum ${CHECKIN_BONUS_LIMIT} diner check-in bonus already peye gechen.`);
-      setShowCheckInModal(false);
-      return;
-    }
-    const reward = CHECKIN_DAILY_REWARD;
-    applyBalanceChange(user.uid, { winning: reward });
-    const newBonusDays = checkInBonusDays + 1;
-    const newStreak = checkInStreak + 1;
-    const nowMs = Date.now();
-    setCheckInBonusDays(newBonusDays);
-    setCheckInStreak(newStreak);
-    setLastCheckInMs(nowMs);
-    setCheckedInToday(true);
-    setDoc(doc(db, 'checkins', user.uid), { bonusDays: newBonusDays, streak: newStreak, lastCheckInMs: nowMs }).catch(e => console.error(e));
-    showToast(`+৳${reward} check-in bonus পেয়েছেন!`);
-    setShowCheckInModal(false);
   };
 
   const handleJoinMatch = () => {
@@ -5364,7 +5529,7 @@ ${buildUserContextBrief(uid)}`;
               <div className="space-y-4">
                 <p className="text-xs font-bold flex items-center space-x-1.5"><Globe className="w-4 h-4 text-indigo-400" /><span>URTBV Management</span></p>
                 <div className="flex space-x-2 overflow-x-auto pb-1">
-                  {secBtn('social', 'Social Links')}{secBtn('videos', 'Daily Tour Best Time')}{secBtn('about', 'About Banners')}{secBtn('teams', 'Player/Team & Verification')}
+                  {secBtn('social', 'Social Links')}{secBtn('videos', 'Daily Tour Best Time')}{secBtn('about', 'About Banners')}{secBtn('players', 'Players Approval')}{secBtn('teams', 'Teams & Verification')}
                 </div>
 
                 {adminUrtbvSection === 'social' && platforms.map(([key, label]) => {
@@ -5459,6 +5624,33 @@ ${buildUserContextBrief(uid)}`;
                   </>
                 )}
 
+                {adminUrtbvSection === 'players' && (
+                  <>
+                    <p className="text-[11px] text-slate-500">Player profile flow: Pending {'\u2192'} Review {'\u2192'} Approved / Rejected. Approved hole shobai dekhte pabe.</p>
+                    {playerProfiles.length === 0 ? <p className="text-xs text-slate-500 text-center py-8">Ekhono kono player profile nei.</p> : [...playerProfiles].sort((a, b) => (b.updatedAtMs || 0) - (a.updatedAtMs || 0)).map(x => (
+                      <div key={x.uid} className={`${t.card} border ${t.border} rounded-xl p-3 space-y-2`}>
+                        <div className="flex items-center space-x-3">
+                          <div className="w-12 h-12 rounded-full bg-slate-800 overflow-hidden flex items-center justify-center font-black flex-shrink-0">{x.photo ? <img src={x.photo} alt="" onClick={() => setImageViewer(x.photo)} className="w-full h-full object-cover" /> : String(x.name || '?').charAt(0)}</div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold truncate">{x.name} <span className="text-slate-500 font-mono font-normal">({x.uid})</span></p>
+                            <p className="text-[10px] text-slate-400 truncate">{(x.roles || []).join(', ')} {'\u00b7'} {x.title}</p>
+                            <p className="text-[10px] text-slate-500">FF: {x.ffUid} {'\u00b7'} WA: {x.whatsapp}</p>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${x.status === 'approved' ? 'bg-emerald-600/20 text-emerald-300' : x.status === 'rejected' ? 'bg-red-600/20 text-red-300' : 'bg-amber-600/20 text-amber-300'}`}>{x.status || 'pending'}</span>
+                        </div>
+                        {x.shot && <button onClick={() => setImageViewer(x.shot)} className={`w-full py-2 ${t.input} border rounded-lg text-[11px] font-bold`}>Gaming ID Screenshot dekhun</button>}
+                        <div className="flex flex-wrap gap-2">
+                          <button onClick={() => adminPatchPlayer(x.uid, { status: 'review' })} className="px-3 py-1.5 bg-amber-600/20 border border-amber-500/40 text-amber-300 rounded-lg text-[11px] font-bold">Review</button>
+                          <button onClick={() => adminPatchPlayer(x.uid, { status: 'approved' }, 'Apnar Player profile Approved hoyeche!')} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[11px] font-bold">Approve</button>
+                          <button onClick={() => adminPatchPlayer(x.uid, { status: 'rejected' }, 'Apnar Player profile Reject kora hoyeche. Tothyo thik kore abar pathan.')} className="px-3 py-1.5 bg-red-600/80 text-white rounded-lg text-[11px] font-bold">Reject</button>
+                          <span className="flex items-center space-x-2 text-[11px]"><span>Enabled</span><Toggle on={x.enabled !== false} onClick={() => adminPatchPlayer(x.uid, { enabled: x.enabled === false })} /></span>
+                          <button onClick={() => adminDeletePlayer(x.uid)} className="p-1.5 text-red-400"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+
                 {adminUrtbvSection === 'teams' && (
                   <>
                     <p className="text-[11px] text-slate-500">Total {teamProfiles.length} ti player/team profile. Form puro fill korle auto Verified hoy; ekhane theke Verify off/on, Enable/Disable ba Delete kora jabe.</p>
@@ -5470,6 +5662,7 @@ ${buildUserContextBrief(uid)}`;
                             <p className="text-xs font-bold truncate">{x.name} <span className="text-slate-500 font-mono font-normal">({x.uid})</span></p>
                             <p className="text-[10px] text-slate-400 truncate">{x.role} {'\u00b7'} {x.title}</p>
                             <p className="text-[10px] text-slate-500">FF: {x.ffUid} {'\u00b7'} WA: {x.whatsapp}</p>
+                            <p className="text-[10px] text-slate-500">Members: {(x.members || []).length} {'\u00b7'} Needs: {(x.needRoles || []).join(', ') || '-'}</p>
                           </div>
                         </div>
                         <div className="flex items-center justify-between text-[11px]">
@@ -5973,12 +6166,12 @@ ${buildUserContextBrief(uid)}`;
 
   // ---------- MAIN LAYOUT ----------
   const navItems = [
-    { id: 'home', label: 'Home', icon: Home },
-    { id: 'mymatch', label: 'My Match', icon: Gamepad2 },
-    { id: 'results', label: 'Results', icon: Trophy },
-    { id: 'shop', label: 'Shop', icon: ShoppingBag },
-    { id: 'urtbv', label: 'URTBV', icon: Globe },
-    { id: 'profile', label: 'Profile', icon: User },
+    { id: 'home', label: 'Home', bn: 'হোম', icon: Home },
+    { id: 'mymatch', label: 'My Match', bn: 'আমার ম্যাচ', icon: Gamepad2 },
+    { id: 'results', label: 'Results', bn: 'রেজাল্ট', icon: Trophy },
+    { id: 'shop', label: 'Shop', bn: 'শপ', icon: ShoppingBag },
+    { id: 'urtbv', label: 'URTBV', bn: 'URTBV', icon: Globe },
+    { id: 'profile', label: 'Profile', bn: 'প্রোফাইল', icon: User },
   ];
 
   return (
@@ -5999,6 +6192,10 @@ ${buildUserContextBrief(uid)}`;
           <button onClick={() => { playUiSound('click'); setShowPlayerSearch(true); }} className="relative p-1.5" aria-label="Search players">
             <Search className="w-5 h-5 text-slate-400" />
           </button>
+          <div className="flex items-center rounded-full border border-slate-700 overflow-hidden text-[10px] font-black flex-shrink-0">
+            <button onClick={() => setLang('en')} className={`px-2 py-1 ${lang === 'en' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>EN</button>
+            <button onClick={() => setLang('bn')} className={`px-2 py-1 ${lang === 'bn' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>BN</button>
+          </div>
           <button onClick={() => setShowNotifications(true)} className="relative p-1.5">
             <Bell className="w-5 h-5 text-slate-400" />
             {myNotifications.length > 0 && <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full" />}
@@ -6030,11 +6227,11 @@ ${buildUserContextBrief(uid)}`;
                 }}
                 onClick={() => {
                   if (_bannerTouchRef.current.moved) { _bannerTouchRef.current.moved = false; return; }
-                  openBannerLink(currentBanner);
+                  if (!isVideoBanner(currentBanner)) openBannerLink(currentBanner);
                 }}
               >
                 {currentBanner.image && (isVideoBanner(currentBanner) ? (
-                  <BannerVideo key={currentBanner.image + bannerCarouselIndex} src={currentBanner.image} onEnded={() => goBanner(1)} />
+                  <BannerVideo key={currentBanner.image + bannerCarouselIndex} src={currentBanner.image} onEnded={() => goBanner(1)} onOpenLink={currentBanner.link ? () => openBannerLink(currentBanner) : null} />
                 ) : (
                   <img src={currentBanner.image} alt="" className="absolute inset-0 w-full h-full object-cover" />
                 ))}
@@ -6054,6 +6251,11 @@ ${buildUserContextBrief(uid)}`;
           })()}
 
           <div className="grid grid-cols-2 gap-3">
+            {(checkInDone || !checkInLoaded) ? (
+              <div className={`${t.card} border ${t.border} rounded-2xl p-4 flex flex-col items-center space-y-1`}>
+                {checkInDone ? <span className="text-xs font-bold text-slate-500">Daily Check-in</span> : <span className="text-xs font-bold text-slate-500">...</span>}
+              </div>
+            ) : (
             <button
               onClick={() => { if (!checkedInToday) setShowCheckInModal(true); }}
               className={`${t.card} border ${t.border} rounded-2xl p-4 flex flex-col items-center space-y-1 ${checkedInToday ? 'opacity-60' : ''}`}
@@ -6062,6 +6264,7 @@ ${buildUserContextBrief(uid)}`;
               <span className="text-xs font-bold">{checkedInToday ? 'Checked In' : 'Daily Check-in'}</span>
               <span className="text-[10px] text-slate-500">Streak: {checkInStreak} days</span>
             </button>
+            )}
             <button onClick={() => setActiveTab('shop')} className={`${t.card} border ${t.border} rounded-2xl p-4 flex flex-col items-center space-y-1`}>
               <ShoppingBag className="w-6 h-6 text-cyan-400" />
               <span className="text-xs font-bold">FF Shop</span>
@@ -6319,7 +6522,7 @@ ${buildUserContextBrief(uid)}`;
           return (
             <div className="p-4 space-y-4">
               {backBtn('menu')}
-              <h2 className="text-lg font-black">App Somporke Bistarito Janun</h2>
+              <h2 className="text-lg font-black">{tr('Know the app in detail', 'অ্যাপ সম্পর্কে বিস্তারিত জানুন')}</h2>
               {items.length === 0 ? <p className="text-xs text-slate-500 text-center py-10">Ekhono kono content nei.</p> : items.map(b => (
                 <div key={b.id} className={`${cardBase} overflow-hidden`}>
                   {b.image && <img src={b.image} alt="" className="w-full object-cover" style={{ aspectRatio: '667/340' }} />}
@@ -6336,48 +6539,178 @@ ${buildUserContextBrief(uid)}`;
 
         if (urtbvView === 'teams') {
           const q = teamSearch.trim().toLowerCase();
-          const list = teamProfiles
+          const roleChip = (r, on) => (<span key={r} className={`inline-block text-[10px] px-2 py-0.5 rounded-full border ${on ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/30' : 'bg-amber-600/20 text-amber-300 border-amber-500/30'}`}>{r}</span>);
+          const copyRow = (label, val) => (
+            <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-lg px-3 py-2 flex items-center justify-between text-xs`}>
+              <span className="truncate">{label}: <b className="font-mono">{val}</b></span>
+              <button onClick={() => copyToClipboard(val, label)} className="flex-shrink-0 ml-2"><Copy className="w-4 h-4 text-indigo-400" /></button>
+            </div>
+          );
+          const roleFilterBar = (
+            <div className="flex space-x-2 overflow-x-auto pb-1">
+              {['All', ...URTBV_ROLES].map(r => (
+                <button key={r} onClick={() => setTeamRoleFilter(r)} className={`flex-shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold border ${teamRoleFilter === r ? 'bg-blue-600 border-blue-600 text-white' : t.input}`}>{r === 'All' ? tr('All', '\u09b8\u09ac') : r}</button>
+              ))}
+            </div>
+          );
+
+          // ---------- Team detail ----------
+          if (teamDetailUid) {
+            const team = teamProfiles.find(x => x.uid === teamDetailUid);
+            if (!team) return (<div className="p-4 space-y-3">{backBtn('teams')}<p className="text-xs text-slate-500 text-center py-10">Team paoa jayni.</p></div>);
+            const isOwner = team.uid === user.uid;
+            const members = Array.isArray(team.members) ? team.members : [];
+            const need = Array.isArray(team.needRoles) ? team.needRoles : [];
+            const myReq = joinRequests.find(r => r.id === `${team.uid}_${user.uid}`);
+            const teamReqs = joinRequests.filter(r => r.teamUid === team.uid).sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+            const applyRoles = myPlayer ? (myPlayer.roles || []).filter(r => need.length === 0 || need.includes(r)) : [];
+            return (
+              <div className="p-4 space-y-4">
+                <button onClick={() => setTeamDetailUid(null)} className="flex items-center space-x-1 text-xs text-slate-400"><ArrowLeft className="w-4 h-4" /><span>{tr('Back', '\u09aa\u09bf\u099b\u09a8\u09c7')}</span></button>
+                <div className={`${cardBase} p-4 space-y-3`}>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-16 h-16 rounded-xl bg-slate-800 overflow-hidden flex items-center justify-center font-black text-xl flex-shrink-0">{team.logo ? <img src={team.logo} alt="" className="w-full h-full object-cover" /> : String(team.name || '?').charAt(0)}</div>
+                    <div className="min-w-0">
+                      <p className="text-base font-black truncate">{team.name} <span className="text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded-full align-middle">{'\u2714'} Verified</span></p>
+                      <p className="text-xs text-amber-300 font-semibold">{team.title}</p>
+                    </div>
+                  </div>
+                  {copyRow('FF UID', team.ffUid)}
+                  {copyRow('WhatsApp', team.whatsapp)}
+                </div>
+
+                <div className={`${cardBase} p-4 space-y-3`}>
+                  <p className="text-sm font-black">{tr('Players currently in the team', '\u099f\u09bf\u09ae\u09c7 \u09ac\u09b0\u09cd\u09a4\u09ae\u09be\u09a8\u09c7 \u09af\u09be\u09b0\u09be \u0986\u099b\u09c7')}</p>
+                  {members.length === 0 ? <p className="text-xs text-slate-500">{tr('No player info added.', '\u0995\u09cb\u09a8\u09cb \u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0\u09c7\u09b0 \u09a4\u09a5\u09cd\u09af \u09a6\u09c7\u0993\u09af\u09bc\u09be \u09b9\u09af\u09bc\u09a8\u09bf\u0964')}</p> : members.map(m => (
+                    <div key={m.id} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-2`}>
+                      <div className="flex items-center justify-between"><p className="text-xs font-bold truncate">{m.name}</p>{roleChip(m.role, true)}</div>
+                      {copyRow('FF UID', m.ffUid)}
+                      {m.screenshot && <button onClick={() => setImageViewer(m.screenshot)} className="w-full py-2 bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 rounded-lg text-[11px] font-bold">{tr('View Gaming ID Screenshot', '\u0997\u09c7\u09ae\u09bf\u0982 \u0986\u0987\u09a1\u09bf \u09b8\u09cd\u0995\u09cd\u09b0\u09bf\u09a8\u09b6\u099f \u09a6\u09c7\u0996\u09c1\u09a8')}</button>}
+                    </div>
+                  ))}
+                </div>
+
+                <div className={`${cardBase} p-4 space-y-2`}>
+                  <p className="text-sm font-black">{tr('Players needed', '\u09af\u09c7 \u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0 \u09aa\u09cd\u09b0\u09af\u09bc\u09cb\u099c\u09a8')}</p>
+                  <div className="flex flex-wrap gap-2">{need.length === 0 ? <span className="text-xs text-slate-500">-</span> : need.map(r => roleChip(r, false))}</div>
+                </div>
+
+                {isOwner ? (
+                  <div className={`${cardBase} p-4 space-y-3`}>
+                    <p className="text-sm font-black">{tr('Join Requests', '\u099c\u09af\u09bc\u09c7\u09a8 \u09b0\u09bf\u0995\u09cb\u09af\u09bc\u09c7\u09b8\u09cd\u099f')} ({teamReqs.length})</p>
+                    {teamReqs.length === 0 ? <p className="text-xs text-slate-500">{tr('No requests yet.', '\u098f\u0996\u09a8\u09cb \u0995\u09cb\u09a8\u09cb \u09b0\u09bf\u0995\u09cb\u09af\u09bc\u09c7\u09b8\u09cd\u099f \u09a8\u09c7\u0987\u0964')}</p> : teamReqs.map(r => {
+                      const pl = playerProfiles.find(x => x.uid === r.playerUid);
+                      return (
+                        <div key={r.id} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-2`}>
+                          <div className="flex items-center space-x-3">
+                            <div className="w-12 h-12 rounded-full bg-slate-800 overflow-hidden flex items-center justify-center font-black flex-shrink-0">{pl && pl.photo ? <img src={pl.photo} alt="" onClick={() => setImageViewer(pl.photo)} className="w-full h-full object-cover" /> : '?'}</div>
+                            <div className="min-w-0 flex-1"><p className="text-xs font-bold truncate">{pl ? pl.name : r.playerUid}</p><p className="text-[10px] text-slate-400">{tr('Applied as', '\u0986\u09ac\u09c7\u09a6\u09a8')}: {r.role}</p></div>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.status === 'accepted' ? 'bg-emerald-600/20 text-emerald-300' : r.status === 'rejected' ? 'bg-red-600/20 text-red-300' : 'bg-amber-600/20 text-amber-300'}`}>{r.status}</span>
+                          </div>
+                          {pl && copyRow('FF UID', pl.ffUid)}
+                          {pl && copyRow('WhatsApp', pl.whatsapp)}
+                          {pl && pl.shot && <button onClick={() => setImageViewer(pl.shot)} className="w-full py-2 bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 rounded-lg text-[11px] font-bold">{tr('View Gaming ID Screenshot', '\u0997\u09c7\u09ae\u09bf\u0982 \u0986\u0987\u09a1\u09bf \u09b8\u09cd\u0995\u09cd\u09b0\u09bf\u09a8\u09b6\u099f \u09a6\u09c7\u0996\u09c1\u09a8')}</button>}
+                          {r.status === 'pending' && (
+                            <div className="flex space-x-2">
+                              <button onClick={() => respondJoin(r, 'accepted')} className="flex-1 py-2 bg-emerald-600 text-white rounded-lg text-[11px] font-bold">{tr('Accept', '\u0997\u09cd\u09b0\u09b9\u09a3')}</button>
+                              <button onClick={() => respondJoin(r, 'rejected')} className="flex-1 py-2 bg-red-600/80 text-white rounded-lg text-[11px] font-bold">{tr('Reject', '\u09ac\u09be\u09a4\u09bf\u09b2')}</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    <button onClick={openTeamForm} className="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold">{tr('Edit Team', '\u099f\u09bf\u09ae \u098f\u09a1\u09bf\u099f')}</button>
+                  </div>
+                ) : (
+                  <div className={`${cardBase} p-4 space-y-3`}>
+                    <p className="text-sm font-black">{tr('Apply / Request to Join', '\u099c\u09af\u09bc\u09c7\u09a8 \u09b0\u09bf\u0995\u09cb\u09af\u09bc\u09c7\u09b8\u09cd\u099f \u09a6\u09bf\u09a8')}</p>
+                    {!myPlayer ? (
+                      <button onClick={openPlayerForm} className="w-full py-3 bg-indigo-600 text-white rounded-xl text-xs font-bold">{tr('Create your Player profile first', '\u0986\u0997\u09c7 \u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0 \u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2 \u09a4\u09c8\u09b0\u09bf \u0995\u09b0\u09c1\u09a8')}</button>
+                    ) : myPlayer.status !== 'approved' ? (
+                      <p className="text-xs text-amber-300">{tr('Your Player profile is', '\u0986\u09aa\u09a8\u09be\u09b0 \u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0 \u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2')} {myPlayer.status}. {tr('You can apply after Admin approval.', '\u0985\u09cd\u09af\u09be\u09a1\u09ae\u09bf\u09a8 \u0985\u09cd\u09af\u09be\u09aa\u09cd\u09b0\u09c1\u09ad \u0995\u09b0\u09b2\u09c7 \u0986\u09aa\u09a8\u09bf \u0986\u09ac\u09c7\u09a6\u09a8 \u0995\u09b0\u09a4\u09c7 \u09aa\u09be\u09b0\u09ac\u09c7\u09a8\u0964')}</p>
+                    ) : myReq && myReq.status !== 'rejected' ? (
+                      <p className="text-xs text-emerald-300">{tr('Your request', '\u0986\u09aa\u09a8\u09be\u09b0 \u09b0\u09bf\u0995\u09cb\u09af\u09bc\u09c7\u09b8\u09cd\u099f')}: <b>{myReq.status}</b> ({myReq.role})</p>
+                    ) : applyRoles.length === 0 ? (
+                      <p className="text-xs text-slate-400">{tr('None of your roles match this team\'s needs.', '\u0986\u09aa\u09a8\u09be\u09b0 \u0995\u09cb\u09a8\u09cb Role \u098f\u0987 \u099f\u09bf\u09ae\u09c7\u09b0 \u09aa\u09cd\u09b0\u09af\u09bc\u09cb\u099c\u09a8\u09c7\u09b0 \u09b8\u09be\u09a5\u09c7 \u09ae\u09bf\u09b2\u099b\u09c7 \u09a8\u09be\u0964')}</p>
+                    ) : (
+                      <>
+                        {myReq && myReq.status === 'rejected' && <p className="text-[11px] text-red-300">{tr('Previous request was rejected. You can apply again.', '\u0986\u0997\u09c7\u09b0 \u09b0\u09bf\u0995\u09cb\u09af\u09bc\u09c7\u09b8\u09cd\u099f \u09ac\u09be\u09a4\u09bf\u09b2 \u09b9\u09af\u09bc\u09c7\u099b\u09bf\u09b2\u0964 \u0986\u09ac\u09be\u09b0 \u0986\u09ac\u09c7\u09a6\u09a8 \u0995\u09b0\u09a4\u09c7 \u09aa\u09be\u09b0\u09ac\u09c7\u09a8\u0964')}</p>}
+                        <div className="flex flex-wrap gap-2">{applyRoles.map(r => (
+                          <button key={r} onClick={() => requestJoin(team, r)} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold">{tr('Apply as', '\u0986\u09ac\u09c7\u09a6\u09a8')} {r}</button>
+                        ))}</div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          // ---------- Teams / Players list ----------
+          const teams = teamProfiles
             .filter(x => x.enabled !== false && x.verified)
-            .filter(x => teamRoleFilter === 'All' || x.role === teamRoleFilter)
-            .filter(x => !q || [x.name, x.role, x.title].some(f => String(f || '').toLowerCase().includes(q)))
+            .filter(x => teamRoleFilter === 'All' || (Array.isArray(x.needRoles) && x.needRoles.length ? x.needRoles.includes(teamRoleFilter) : x.role === teamRoleFilter))
+            .filter(x => !q || [x.name, x.title, x.role, ...(x.needRoles || []), ...(x.members || []).map(m => m.role)].some(f => String(f || '').toLowerCase().includes(q)))
             .sort((a, b) => (b.updatedAtMs || 0) - (a.updatedAtMs || 0));
-          const mine = teamProfiles.find(x => x.uid === user.uid);
+          const players = playerProfiles
+            .filter(x => x.enabled !== false && x.status === 'approved')
+            .filter(x => teamRoleFilter === 'All' || (x.roles || []).includes(teamRoleFilter))
+            .filter(x => !q || [x.name, x.title, ...(x.roles || [])].some(f => String(f || '').toLowerCase().includes(q)))
+            .sort((a, b) => (b.updatedAtMs || 0) - (a.updatedAtMs || 0));
+          const mineTeam = teamProfiles.find(x => x.uid === user.uid);
+          const statusColor = myPlayer ? (myPlayer.status === 'approved' ? 'text-emerald-300' : myPlayer.status === 'rejected' ? 'text-red-300' : 'text-amber-300') : '';
           return (
             <div className="p-4 space-y-4">
               {backBtn('menu')}
-              <h2 className="text-lg font-black">Team / Player Khunjun</h2>
-              <button onClick={openTeamForm} className="w-full py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-xs font-bold">{mine ? 'Edit My Team / Player Profile' : 'Create Team / Player'}</button>
-              <div className={`${t.input} border rounded-xl flex items-center px-3`}>
-                <Search className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                <input value={teamSearch} onChange={(e) => setTeamSearch(e.target.value)} placeholder="Name, Role (Sniper...), Title diye khunjun" className="flex-1 bg-transparent p-2.5 text-xs outline-none" />
+              <h2 className="text-lg font-black">{tr('Team & Player', '\u099f\u09bf\u09ae \u0993 \u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0')}</h2>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={openTeamForm} className="py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-xs font-bold">{mineTeam ? tr('Edit My Team', '\u0986\u09ae\u09be\u09b0 \u099f\u09bf\u09ae \u098f\u09a1\u09bf\u099f') : tr('Create Team', '\u099f\u09bf\u09ae \u09a4\u09c8\u09b0\u09bf \u0995\u09b0\u09c1\u09a8')}</button>
+                <button onClick={openPlayerForm} className="py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-xs font-bold">{myPlayer ? tr('Edit My Player', '\u0986\u09ae\u09be\u09b0 \u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0 \u098f\u09a1\u09bf\u099f') : tr('Create Player', '\u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0 \u09a4\u09c8\u09b0\u09bf \u0995\u09b0\u09c1\u09a8')}</button>
               </div>
-              <div className="flex space-x-2 overflow-x-auto pb-1">
-                {['All', ...URTBV_ROLES].map(r => (
-                  <button key={r} onClick={() => setTeamRoleFilter(r)} className={`flex-shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold border ${teamRoleFilter === r ? 'bg-blue-600 border-blue-600 text-white' : t.input}`}>{r}</button>
+              {myPlayer && <p className={`text-[11px] ${statusColor}`}>{tr('Your Player profile status', '\u0986\u09aa\u09a8\u09be\u09b0 \u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0 \u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2\u09c7\u09b0 \u0985\u09ac\u09b8\u09cd\u09a5\u09be')}: <b>{myPlayer.status}</b></p>}
+              <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-1 flex`}>
+                {[['teams', tr('Teams', '\u099f\u09bf\u09ae')], ['players', tr('Players', '\u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0')]].map(([id, label]) => (
+                  <button key={id} onClick={() => setTeamPlayerTab(id)} className={`flex-1 py-2 rounded-lg text-xs font-bold ${teamPlayerTab === id ? `${t.card} ${t.text}` : 'text-slate-500'}`}>{label}</button>
                 ))}
               </div>
-              {list.length === 0 ? <p className="text-xs text-slate-500 text-center py-10">Kono player/team paoa jayni.</p> : list.map(x => (
-                <div key={x.uid} className={`${cardBase} p-3 space-y-2`}>
+              <div className={`${t.input} border rounded-xl flex items-center px-3`}>
+                <Search className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                <input value={teamSearch} onChange={(e) => setTeamSearch(e.target.value)} placeholder={tr('Search name, role, title', '\u09a8\u09be\u09ae, Role, Title \u09a6\u09bf\u09af\u09bc\u09c7 \u0996\u09c1\u0981\u099c\u09c1\u09a8')} className="flex-1 bg-transparent p-2.5 text-xs outline-none" />
+              </div>
+              <p className="text-[10px] text-slate-500">{teamPlayerTab === 'teams' ? tr('Role filter = teams that NEED this role', 'Role \u09ab\u09bf\u09b2\u09cd\u099f\u09be\u09b0 = \u09af\u09c7 \u099f\u09bf\u09ae\u09c7\u09b0 \u098f\u0987 Role \u09aa\u09cd\u09b0\u09af\u09bc\u09cb\u099c\u09a8') : tr('Role filter = players who PLAY this role', 'Role \u09ab\u09bf\u09b2\u09cd\u099f\u09be\u09b0 = \u09af\u09be\u09b0\u09be \u098f\u0987 Role \u0996\u09c7\u09b2\u09c7')}</p>
+              {roleFilterBar}
+
+              {teamPlayerTab === 'teams' ? (teams.length === 0 ? <p className="text-xs text-slate-500 text-center py-10">{tr('No teams found.', '\u0995\u09cb\u09a8\u09cb \u099f\u09bf\u09ae \u09aa\u09be\u0993\u09af\u09bc\u09be \u09af\u09be\u09af\u09bc\u09a8\u09bf\u0964')}</p> : teams.map(x => (
+                <div key={x.uid} onClick={() => setTeamDetailUid(x.uid)} className={`${cardBase} p-3 space-y-2 cursor-pointer`}>
                   <div className="flex items-center space-x-3">
-                    <div className="w-14 h-14 rounded-xl bg-slate-800 overflow-hidden flex items-center justify-center font-black flex-shrink-0">
-                      {x.logo ? <img src={x.logo} alt="" className="w-full h-full object-cover" /> : String(x.name || '?').charAt(0)}
-                    </div>
+                    <div className="w-14 h-14 rounded-xl bg-slate-800 overflow-hidden flex items-center justify-center font-black flex-shrink-0">{x.logo ? <img src={x.logo} alt="" className="w-full h-full object-cover" /> : String(x.name || '?').charAt(0)}</div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-black truncate flex items-center space-x-1"><span className="truncate">{x.name}</span><span className="text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded-full flex-shrink-0">{'\u2714'} Verified</span></p>
                       <p className="text-xs text-amber-300 font-semibold truncate">{x.title}</p>
-                      <span className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-600/20 text-indigo-300 border border-indigo-500/30">{x.role}</span>
                     </div>
+                    <ChevronRight className="w-4 h-4 text-slate-500 flex-shrink-0" />
                   </div>
-                  <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-lg px-3 py-2 flex items-center justify-between text-xs`}>
-                    <span>FF UID: <b className="font-mono">{x.ffUid}</b></span>
-                    <button onClick={() => copyToClipboard(x.ffUid, 'Free Fire UID')}><Copy className="w-4 h-4 text-indigo-400" /></button>
-                  </div>
-                  <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-lg px-3 py-2 flex items-center justify-between text-xs`}>
-                    <span>WhatsApp: <b className="font-mono">{x.whatsapp}</b></span>
-                    <button onClick={() => copyToClipboard(x.whatsapp, 'WhatsApp number')}><Copy className="w-4 h-4 text-emerald-400" /></button>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(x.members || []).map(m => roleChip(m.role, true))}
+                    {(x.needRoles || []).map(r => (<span key={'n' + r} className="inline-block text-[10px] px-2 py-0.5 rounded-full border bg-amber-600/20 text-amber-300 border-amber-500/30">{tr('Needs', '\u09aa\u09cd\u09b0\u09af\u09bc\u09cb\u099c\u09a8')} {r}</span>))}
+                    {!(x.members || []).length && !(x.needRoles || []).length && x.role && roleChip(x.role, true)}
                   </div>
                 </div>
-              ))}
+              ))) : (players.length === 0 ? <p className="text-xs text-slate-500 text-center py-10">{tr('No players found.', '\u0995\u09cb\u09a8\u09cb \u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0 \u09aa\u09be\u0993\u09af\u09bc\u09be \u09af\u09be\u09af\u09bc\u09a8\u09bf\u0964')}</p> : players.map(x => (
+                <div key={x.uid} className={`${cardBase} p-3 space-y-2`}>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-14 h-14 rounded-full bg-slate-800 overflow-hidden flex items-center justify-center font-black flex-shrink-0">{x.photo ? <img src={x.photo} alt="" onClick={() => setImageViewer(x.photo)} className="w-full h-full object-cover" /> : String(x.name || '?').charAt(0)}</div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-black truncate flex items-center space-x-1"><span className="truncate">{x.name}</span><span className="text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded-full flex-shrink-0">{'\u2714'} Verified</span></p>
+                      <p className="text-xs text-amber-300 font-semibold truncate">{x.title}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">{(x.roles || []).map(r => roleChip(r, true))}</div>
+                  {copyRow('FF UID', x.ffUid)}
+                  {copyRow('WhatsApp', x.whatsapp)}
+                  {x.shot && <button onClick={() => setImageViewer(x.shot)} className="w-full py-2 bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 rounded-lg text-[11px] font-bold">{tr('View Gaming ID Screenshot', '\u0997\u09c7\u09ae\u09bf\u0982 \u0986\u0987\u09a1\u09bf \u09b8\u09cd\u0995\u09cd\u09b0\u09bf\u09a8\u09b6\u099f \u09a6\u09c7\u0996\u09c1\u09a8')}</button>}
+                </div>
+              )))}
             </div>
           );
         }
@@ -6406,10 +6739,10 @@ ${buildUserContextBrief(uid)}`;
               <span className="text-sm font-bold">Daily Tour Best Time</span><ChevronRight className="w-4 h-4 text-slate-500" />
             </button>
             <button onClick={() => setUrtbvView('about')} className={`${cardBase} w-full p-4 flex items-center justify-between`}>
-              <span className="text-sm font-bold">App Somporke Bistarito Janun</span><ChevronRight className="w-4 h-4 text-slate-500" />
+              <span className="text-sm font-bold">{tr('Know the app in detail', 'অ্যাপ সম্পর্কে বিস্তারিত জানুন')}</span><ChevronRight className="w-4 h-4 text-slate-500" />
             </button>
             <button onClick={() => setUrtbvView('teams')} className={`${cardBase} w-full p-4 flex items-center justify-between`}>
-              <span className="text-sm font-bold">Team / Player Khunjun</span><ChevronRight className="w-4 h-4 text-slate-500" />
+              <span className="text-sm font-bold">{tr('Team & Player', 'টিম ও প্লেয়ার')}</span><ChevronRight className="w-4 h-4 text-slate-500" />
             </button>
           </div>
         );
@@ -6602,6 +6935,10 @@ ${buildUserContextBrief(uid)}`;
                     <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-pink-500/10 border border-pink-400/20 text-pink-300">
                       <span className="text-[11px]">❤️</span><span className="text-[9px] font-black">{profileLikes[user.uid] || 0} Likes</span>
                     </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <button onClick={() => setFollowListView({ uid: user.uid, type: 'followers' })} className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] font-black text-slate-200">{followersOf(user.uid).length} {tr('Followers', 'ফলোয়ার')}</button>
+                      <button onClick={() => setFollowListView({ uid: user.uid, type: 'following' })} className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] font-black text-slate-200">{followingOf(user.uid).length} {tr('Following', 'ফলোইং')}</button>
+                    </div>
                   </div>
                   <button onClick={openProfileSettings} className="p-2.5 bg-white/5 border border-white/10 rounded-xl flex-shrink-0"><Edit3 className="w-4 h-4 text-indigo-300" /></button>
                 </div>
@@ -6773,7 +7110,7 @@ ${buildUserContextBrief(uid)}`;
             className={`flex flex-col items-center space-y-1 px-1.5 py-1.5 rounded-xl transition-colors ${activeTab === item.id ? 'text-indigo-400' : 'text-slate-500'}`}
           >
             <item.icon className="w-5 h-5" />
-            <span className="text-[9px] font-semibold">{item.label}</span>
+            <span className="text-[9px] font-semibold">{tr(item.label, item.bn || item.label)}</span>
           </button>
         ))}
       </nav>
@@ -7147,23 +7484,74 @@ ${buildUserContextBrief(uid)}`;
       })()}
 
       {showTeamForm && (
-        <div className="fixed inset-0 z-[60] bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setShowTeamForm(false)}>
-          <div className={`${t.card} w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-2xl p-5 space-y-3 border ${t.border}`} onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between"><h3 className="font-bold text-sm">Create Team / Player</h3><button onClick={() => setShowTeamForm(false)}><X className="w-5 h-5 text-slate-400" /></button></div>
+        <div className="fixed inset-0 z-[60] bg-black/70 flex items-end sm:items-center justify-center p-3" onClick={() => setShowTeamForm(false)}>
+          <div className={`${t.card} w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-2xl p-4 space-y-3 border ${t.border}`} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between"><h3 className="font-bold text-sm">{tr('Create Team', '\u099f\u09bf\u09ae \u09a4\u09c8\u09b0\u09bf \u0995\u09b0\u09c1\u09a8')}</h3><button onClick={() => setShowTeamForm(false)}><X className="w-5 h-5 text-slate-400" /></button></div>
             <div className="flex items-center space-x-3">
-              <div className="w-16 h-16 rounded-xl bg-slate-800 overflow-hidden flex items-center justify-center font-black">{tf.logo ? <img src={tf.logo} alt="" className="w-full h-full object-cover" /> : <Upload className="w-5 h-5 text-slate-500" />}</div>
-              <label className={`flex-1 text-center py-3 ${t.input} border border-dashed rounded-xl text-xs font-bold cursor-pointer`}>Team Logo Upload<input type="file" accept="image/*" className="hidden" onChange={pickImage((v) => setTf(prev => ({ ...prev, logo: v })))} /></label>
+              <div className="w-16 h-16 rounded-xl bg-slate-800 overflow-hidden flex items-center justify-center flex-shrink-0">{tf.logo ? <img src={tf.logo} alt="" className="w-full h-full object-cover" /> : <Upload className="w-5 h-5 text-slate-500" />}</div>
+              <label className={`flex-1 text-center py-3 ${t.input} border border-dashed rounded-xl text-xs font-bold cursor-pointer`}>{tr('Team Logo', '\u099f\u09bf\u09ae \u09b2\u09cb\u0997\u09cb')}<input type="file" accept="image/*" className="hidden" onChange={pickImageChecked((v) => setTf(prev => ({ ...prev, logo: v })), 300, 0.7)} /></label>
             </div>
-            <input value={tf.ffUid} onChange={(e) => setTf({ ...tf, ffUid: e.target.value })} placeholder="Free Fire UID" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
+            <input value={tf.name} onChange={(e) => setTf({ ...tf, name: e.target.value })} placeholder={tr('Team Name', '\u099f\u09bf\u09ae\u09c7\u09b0 \u09a8\u09be\u09ae')} className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
+            <input value={tf.title} onChange={(e) => setTf({ ...tf, title: e.target.value })} placeholder={tr('Title (e.g. Sniper Needed)', 'Title (\u09af\u09c7\u09ae\u09a8: Sniper Needed)')} className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
+            <input value={tf.ffUid} onChange={(e) => setTf({ ...tf, ffUid: e.target.value.replace(/[^0-9]/g, '') })} placeholder={tr('Owner Free Fire UID', '\u0993\u09a8\u09be\u09b0\u09c7\u09b0 Free Fire UID')} inputMode="numeric" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
             <input value={tf.whatsapp} onChange={(e) => setTf({ ...tf, whatsapp: e.target.value })} placeholder="WhatsApp Number" inputMode="tel" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
-            <input value={tf.name} onChange={(e) => setTf({ ...tf, name: e.target.value })} placeholder="Name (Player / Team)" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
-            <div>
-              <p className="text-[10px] text-slate-500 mb-1">Role</p>
-              <div className="flex flex-wrap gap-2">{URTBV_ROLES.map(r => (<button key={r} type="button" onClick={() => setTf({ ...tf, role: r })} className={`px-3 py-1.5 rounded-full text-[11px] font-bold border ${tf.role === r ? 'bg-indigo-600 border-indigo-600 text-white' : t.input}`}>{r}</button>))}</div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-bold">{tr('We already have (existing players)', '\u0986\u09ae\u09be\u09a6\u09c7\u09b0 \u0995\u09be\u099b\u09c7 \u0986\u099b\u09c7 (\u09ac\u09b0\u09cd\u09a4\u09ae\u09be\u09a8 \u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0)')} ({tf.members.length}/6)</p>
+              {tf.members.map((m, i) => (
+                <div key={i} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-2`}>
+                  <div className="flex items-center justify-between"><span className="text-[11px] font-bold">#{i + 1}</span><button onClick={() => setTf({ ...tf, members: tf.members.filter((_, j) => j !== i) })} className="text-red-400"><Trash2 className="w-4 h-4" /></button></div>
+                  <input value={m.name} onChange={(e) => setTf({ ...tf, members: tf.members.map((x, j) => j === i ? { ...x, name: e.target.value } : x) })} placeholder={tr('Player Name', '\u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0\u09c7\u09b0 \u09a8\u09be\u09ae')} className={`w-full ${t.input} border p-2 rounded-lg text-xs`} />
+                  <input value={m.ffUid} onChange={(e) => setTf({ ...tf, members: tf.members.map((x, j) => j === i ? { ...x, ffUid: e.target.value.replace(/[^0-9]/g, '') } : x) })} placeholder="Free Fire Gaming ID" inputMode="numeric" className={`w-full ${t.input} border p-2 rounded-lg text-xs`} />
+                  <div className="flex flex-wrap gap-1.5">{URTBV_ROLES.map(r => (<button key={r} type="button" onClick={() => setTf({ ...tf, members: tf.members.map((x, j) => j === i ? { ...x, role: r } : x) })} className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${m.role === r ? 'bg-emerald-600 border-emerald-600 text-white' : t.input}`}>{r}</button>))}</div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-12 h-12 rounded-lg bg-slate-800 overflow-hidden flex-shrink-0">{m.screenshot && <img src={m.screenshot} alt="" className="w-full h-full object-cover" />}</div>
+                    <label className={`flex-1 text-center py-2.5 ${t.input} border border-dashed rounded-lg text-[11px] font-bold cursor-pointer`}>{tr('Gaming ID Screenshot', '\u0997\u09c7\u09ae\u09bf\u0982 \u0986\u0987\u09a1\u09bf \u09b8\u09cd\u0995\u09cd\u09b0\u09bf\u09a8\u09b6\u099f')}<input type="file" accept="image/*" className="hidden" onChange={pickImageChecked((v) => setTf(prev => ({ ...prev, members: prev.members.map((x, j) => j === i ? { ...x, screenshot: v } : x) })), 600, 0.5)} /></label>
+                  </div>
+                </div>
+              ))}
+              {tf.members.length < 6 && <button onClick={() => setTf({ ...tf, members: [...tf.members, { ...EMPTY_MEMBER }] })} className={`w-full py-2.5 ${t.input} border rounded-xl text-xs font-bold`}>+ {tr('Add existing player', '\u09ac\u09b0\u09cd\u09a4\u09ae\u09be\u09a8 \u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0 \u09af\u09cb\u0997 \u0995\u09b0\u09c1\u09a8')}</button>}
             </div>
-            <input value={tf.title} onChange={(e) => setTf({ ...tf, title: e.target.value })} placeholder="Title (e.g. Sniper Needed)" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
-            <button onClick={saveTeamProfile} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">SAVE & VERIFY</button>
+
+            <div className="space-y-2">
+              <p className="text-xs font-bold">{tr('We need (roles)', '\u0986\u09ae\u09be\u09a6\u09c7\u09b0 \u09aa\u09cd\u09b0\u09af\u09bc\u09cb\u099c\u09a8 (Role)')}</p>
+              <div className="flex flex-wrap gap-2">{URTBV_ROLES.map(r => { const on = tf.needRoles.includes(r); return (<button key={r} type="button" onClick={() => setTf({ ...tf, needRoles: on ? tf.needRoles.filter(x => x !== r) : [...tf.needRoles, r] })} className={`px-3 py-1.5 rounded-full text-[11px] font-bold border ${on ? 'bg-amber-600 border-amber-600 text-white' : t.input}`}>{r}</button>); })}</div>
+            </div>
+            <button onClick={saveTeamProfile} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">{tr('SAVE TEAM', '\u099f\u09bf\u09ae \u09b8\u09c7\u09ad \u0995\u09b0\u09c1\u09a8')}</button>
           </div>
+        </div>
+      )}
+
+      {showPlayerForm && (
+        <div className="fixed inset-0 z-[60] bg-black/70 flex items-end sm:items-center justify-center p-3" onClick={() => setShowPlayerForm(false)}>
+          <div className={`${t.card} w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-2xl p-4 space-y-3 border ${t.border}`} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between"><h3 className="font-bold text-sm">{tr('Create Player', '\u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0 \u09a4\u09c8\u09b0\u09bf \u0995\u09b0\u09c1\u09a8')}</h3><button onClick={() => setShowPlayerForm(false)}><X className="w-5 h-5 text-slate-400" /></button></div>
+            <div className="flex items-center space-x-3">
+              <div className="w-16 h-16 rounded-full bg-slate-800 overflow-hidden flex items-center justify-center flex-shrink-0">{pf.photo ? <img src={pf.photo} alt="" className="w-full h-full object-cover" /> : <Camera className="w-5 h-5 text-slate-500" />}</div>
+              <label className={`flex-1 text-center py-3 ${t.input} border border-dashed rounded-xl text-xs font-bold cursor-pointer`}>{tr('Your Photo', '\u0986\u09aa\u09a8\u09be\u09b0 \u099b\u09ac\u09bf')}<input type="file" accept="image/*" className="hidden" onChange={pickImageChecked((v) => setPf(prev => ({ ...prev, photo: v })), 300, 0.7)} /></label>
+            </div>
+            <input value={pf.name} onChange={(e) => setPf({ ...pf, name: e.target.value })} placeholder={tr('Player Name', '\u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0\u09c7\u09b0 \u09a8\u09be\u09ae')} className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
+            <input value={pf.ffUid} onChange={(e) => setPf({ ...pf, ffUid: e.target.value.replace(/[^0-9]/g, '') })} placeholder="Free Fire UID / Gaming ID" inputMode="numeric" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
+            <input value={pf.whatsapp} onChange={(e) => setPf({ ...pf, whatsapp: e.target.value })} placeholder="WhatsApp Number" inputMode="tel" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
+            <div className="flex items-center space-x-3">
+              <div className="w-16 h-12 rounded-lg bg-slate-800 overflow-hidden flex-shrink-0">{pf.shot && <img src={pf.shot} alt="" className="w-full h-full object-cover" />}</div>
+              <label className={`flex-1 text-center py-3 ${t.input} border border-dashed rounded-xl text-xs font-bold cursor-pointer`}>{tr('Free Fire ID Screenshot', 'Free Fire ID \u09b8\u09cd\u0995\u09cd\u09b0\u09bf\u09a8\u09b6\u099f')}<input type="file" accept="image/*" className="hidden" onChange={pickImageChecked((v) => setPf(prev => ({ ...prev, shot: v })), 600, 0.5)} /></label>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-500 mb-1">{tr('Roles (choose one or more)', 'Role (\u098f\u0995\u099f\u09bf \u09ac\u09be \u098f\u0995\u09be\u09a7\u09bf\u0995 \u09ac\u09c7\u099b\u09c7 \u09a8\u09bf\u09a8)')}</p>
+              <div className="flex flex-wrap gap-2">{URTBV_ROLES.map(r => { const on = pf.roles.includes(r); return (<button key={r} type="button" onClick={() => setPf({ ...pf, roles: on ? pf.roles.filter(x => x !== r) : [...pf.roles, r] })} className={`px-3 py-1.5 rounded-full text-[11px] font-bold border ${on ? 'bg-emerald-600 border-emerald-600 text-white' : t.input}`}>{r}</button>); })}</div>
+            </div>
+            <input value={pf.title} onChange={(e) => setPf({ ...pf, title: e.target.value })} placeholder={tr('Title (e.g. Looking for a team)', 'Title (\u09af\u09c7\u09ae\u09a8: Team \u0996\u09c1\u0981\u099c\u099b\u09bf)')} className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
+            <p className="text-[10px] text-slate-500">{tr('Your profile goes public after Admin approval.', '\u0985\u09cd\u09af\u09be\u09a1\u09ae\u09bf\u09a8 \u0985\u09cd\u09af\u09be\u09aa\u09cd\u09b0\u09c1\u09ad \u0995\u09b0\u09b2\u09c7 \u0986\u09aa\u09a8\u09be\u09b0 \u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2 \u09b8\u09ac\u09be\u0987 \u09a6\u09c7\u0996\u09ac\u09c7\u0964')}</p>
+            <button onClick={savePlayerProfile} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold">{tr('SUBMIT PLAYER PROFILE', '\u09aa\u09cd\u09b2\u09c7\u09af\u09bc\u09be\u09b0 \u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2 \u099c\u09ae\u09be \u09a6\u09bf\u09a8')}</button>
+          </div>
+        </div>
+      )}
+
+      {imageViewer && (
+        <div className="fixed inset-0 z-[70] bg-black/90 flex items-center justify-center p-3" onClick={() => setImageViewer(null)}>
+          <button className="absolute top-4 right-4 text-white" onClick={() => setImageViewer(null)}><X className="w-7 h-7" /></button>
+          <img src={imageViewer} alt="" className="max-w-full max-h-full object-contain rounded-lg" onClick={(e) => e.stopPropagation()} />
         </div>
       )}
 
@@ -7358,7 +7746,7 @@ ${buildUserContextBrief(uid)}`;
         </div>
       )}
 
-      {showCheckInModal && (
+      {showCheckInModal && !checkInDone && checkInLoaded && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setShowCheckInModal(false)}>
           <div className={`${t.card} w-full max-w-xs rounded-2xl p-6 space-y-4 border ${t.border} text-center`} onClick={(e) => e.stopPropagation()}>
             <div className="w-16 h-16 bg-gradient-to-tr from-amber-500 to-orange-500 rounded-2xl flex items-center justify-center mx-auto"><Flame className="w-8 h-8 text-white" /></div>
