@@ -3306,6 +3306,8 @@ export default function App() {
     } catch (e) { console.error('Referral payout error:', e); }
     setPendingDeposits(pendingDeposits.filter(d => d.id !== dep.id));
     deleteDoc(doc(db, 'pendingDeposits', dep.id)).catch(e => console.error(e));
+    // UR Auto Payment hisab khata (Amount page er jonno)
+    setDoc(doc(db, 'depositLedger', String(dep.id)), { depositId: dep.id, uid: dep.uid, amount: Number(dep.amount), method: dep.method || '', trxId: dep.trxId || '', atMs: Date.now(), source: 'urff2-admin', by: 'urff2-admin' }).catch(e => console.error('ledger error', e));
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Deposit Approved', message: `Apnar ${dep.amount} Taka deposit request approve hoyeche.`, time: 'Just now', targetUid: dep.uid }, ...prev]);
     playSound('approve');
     showToast('Deposit approve kora hoyeche!');
@@ -3315,6 +3317,7 @@ export default function App() {
     applyBalanceChange(wit.uid, { totalWithdrawn: wit.amount });
     setPendingWithdrawals(pendingWithdrawals.filter(w => w.id !== wit.id));
     deleteDoc(doc(db, 'pendingWithdrawals', wit.id)).catch(e => console.error(e));
+    setDoc(doc(db, 'withdrawLedger', String(wit.id)), { withdrawId: wit.id, uid: wit.uid, amount: Number(wit.amount), method: wit.method || '', account: wit.account || '', atMs: Date.now(), source: 'urff2-admin', by: 'urff2-admin' }).catch(e => console.error('ledger error', e));
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Withdraw Approved', message: `Apnar ${wit.amount} Taka withdraw request approve hoyeche.`, time: 'Just now', targetUid: wit.uid }, ...prev]);
     playSound('approve');
     showToast('Withdraw approve kora hoyeche!');
