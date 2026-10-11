@@ -247,6 +247,140 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 import { collection, doc, getDocs, setDoc, updateDoc, increment, deleteDoc, addDoc, onSnapshot, runTransaction, arrayUnion, arrayRemove } from 'firebase/firestore';
 // UR Auto Payment backend-er address (Vercel deploy er por ekhane apnar link boshan, shesh e / chhara)
 const AUTO_PAYMENT_URL = 'https://ur-auto-payment.vercel.app';
+// ---- Rules (Accordion) + Payment Type components (UR FF TOUR) ----
+function RulesAccordion({ rules, darkMode, flat }) {
+  const [open, setOpen] = useState({});
+  if (!rules || !rules.length) return null;
+  return (
+    <div className={`space-y-2 ${flat ? '' : 'max-h-[60vh] overflow-y-auto overscroll-contain pr-1'}`} style={flat ? undefined : { WebkitOverflowScrolling: 'touch' }}>
+      {rules.map((r, i) => {
+        const key = r.id || i;
+        const isOpen = !!open[key];
+        return (
+          <div key={key} className={`${darkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'} border rounded-xl overflow-hidden`}>
+            <button type="button" onClick={() => setOpen(p => ({ ...p, [key]: !p[key] }))} className="w-full flex items-center justify-between p-3 text-left">
+              <span className="text-xs font-bold pr-3 break-words min-w-0">{r.title}</span>
+              <ChevronRight className={`w-4 h-4 text-blue-400 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+            </button>
+            {isOpen && <div className="px-3 pb-3 text-xs leading-relaxed text-slate-400 whitespace-pre-wrap break-words">{r.body}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RulesEditor({ rules, onChange, inputCls, darkMode }) {
+  const upd = (i, patch) => onChange(rules.map((r, k) => (k === i ? { ...r, ...patch } : r)));
+  const move = (i, d) => {
+    const j = i + d;
+    if (j < 0 || j >= rules.length) return;
+    const next = [...rules];
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  };
+  const del = (i) => { if (window.confirm('এই Rule মুছে ফেলবেন?')) onChange(rules.filter((_, k) => k !== i)); };
+  return (
+    <div className="space-y-2">
+      {rules.map((r, i) => (
+        <div key={r.id} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-2.5 space-y-1.5`}>
+          <div className="flex items-center space-x-1.5">
+            <span className="text-[10px] text-slate-500 font-bold w-5 flex-shrink-0">{i + 1}.</span>
+            <input value={r.title} onChange={(e) => upd(i, { title: e.target.value })} placeholder="Heading / Title" className={`flex-1 min-w-0 ${inputCls} border p-2 rounded-lg text-xs`} />
+            <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="px-2 py-1 text-xs font-bold disabled:opacity-30">↑</button>
+            <button type="button" onClick={() => move(i, 1)} disabled={i === rules.length - 1} className="px-2 py-1 text-xs font-bold disabled:opacity-30">↓</button>
+            <button type="button" onClick={() => del(i)} className="px-2 py-1 text-xs font-bold text-red-400">✕</button>
+          </div>
+          <textarea value={r.body} onChange={(e) => upd(i, { body: e.target.value })} rows={3} placeholder="বিস্তারিত Description" className={`w-full ${inputCls} border p-2 rounded-lg text-xs`} />
+        </div>
+      ))}
+      <button type="button" onClick={() => onChange([...rules, { id: 'r_' + Date.now() + '_' + Math.floor(Math.random() * 1000), title: '', body: '' }])} className={`w-full py-2 ${inputCls} border rounded-xl text-xs font-bold`}>+ Add Rule</button>
+    </div>
+  );
+}
+
+function GlobalRulesAdmin({ rules, onSave, inputCls, darkMode }) {
+  const [draft, setDraft] = useState(rules || []);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => { if (!dirty) setDraft(rules || []); }, [rules, dirty]);
+  return (
+    <div className="space-y-2">
+      <RulesEditor rules={draft} onChange={(next) => { setDraft(next); setDirty(true); }} inputCls={inputCls} darkMode={darkMode} />
+      <button type="button" onClick={async () => {
+        const clean = draft.filter(r => (r.title || '').trim() || (r.body || '').trim());
+        await onSave(clean);
+        setDraft(clean); setDirty(false);
+      }} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">SAVE URFF TOUR RULES</button>
+    </div>
+  );
+}
+
+const TX_TYPES = [
+  { key: 'sendMoney', label: 'Send Money', emoji: '💸', verb: 'Send Money to this' },
+  { key: 'recharge', label: 'Mobile Recharge', emoji: '📱', verb: 'Mobile Recharge to this' },
+  { key: 'cashOut', label: 'Cash Out', emoji: '🏧', verb: 'Cash Out to this' },
+  { key: 'payment', label: 'Payment', emoji: '🛍️', verb: 'Make Payment to this' },
+];
+// Admin kichu set na korle: Send Money ON (aager moto), baki 3 ti OFF
+function getTxTypes(pm) {
+  const saved = (pm && pm.types) || {};
+  return TX_TYPES.map(d => {
+    const sv = saved[d.key] || {};
+    return {
+      key: d.key, emoji: d.emoji, verb: d.verb,
+      label: sv.label || d.label, icon: sv.icon || '', instruction: sv.instruction || '',
+      enabled: sv.enabled !== undefined ? !!sv.enabled : d.key === 'sendMoney',
+    };
+  });
+}
+
+function PaymentTypeCards({ types, selected, onSelect, onBlocked, darkMode }) {
+  return (
+    <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+      {types.map(ty => {
+        const isSel = ty.enabled && selected === ty.key;
+        return (
+          <button key={ty.key} type="button" onClick={() => (ty.enabled ? onSelect(ty.key) : onBlocked())}
+            className={`relative rounded-xl p-2 flex flex-col items-center justify-start text-center border transition ${darkMode ? 'bg-slate-950' : 'bg-slate-100'} ${isSel ? 'border-emerald-500 ring-1 ring-emerald-500/60' : ty.enabled ? 'border-slate-700/60' : 'border-slate-700/30'}`}>
+            <span className={`absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black text-white ${ty.enabled ? 'bg-emerald-500' : 'bg-red-500'}`}>{ty.enabled ? '✓' : '✕'}</span>
+            <div className={`w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center text-xl ${ty.enabled ? '' : 'grayscale opacity-40'}`}>
+              {ty.icon ? <img src={ty.icon} alt="" className="w-full h-full object-cover" /> : ty.emoji}
+            </div>
+            <span className={`mt-1 text-[10px] leading-tight font-semibold break-words w-full ${ty.enabled ? '' : 'text-slate-500'}`}>{ty.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function PaymentTypesAdmin({ pm, onChange, onPickIcon, inputCls, darkMode }) {
+  const types = getTxTypes(pm);
+  const setType = (key, patch) => onChange(m => ({ ...m, types: { ...(m.types || {}), [key]: { ...((m.types || {})[key] || {}), ...patch } } }));
+  return (
+    <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-2`}>
+      <p className="text-xs font-bold">{pm.name} — Transaction Types</p>
+      <input value={pm.accountType || ''} onChange={(e) => onChange(m => ({ ...m, accountType: e.target.value }))} placeholder="Account Type (যেমন Personal / Agent / Merchant)" className={`w-full ${inputCls} border p-1.5 rounded-lg text-[11px]`} />
+      {types.map(ty => (
+        <div key={ty.key} className="border border-slate-700/40 rounded-lg p-2 space-y-1.5">
+          <div className="flex items-center space-x-2">
+            <div className="w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center bg-slate-800 text-lg flex-shrink-0">{ty.icon ? <img src={ty.icon} alt="" className="w-full h-full object-cover" /> : ty.emoji}</div>
+            <input value={ty.label} onChange={(e) => setType(ty.key, { label: e.target.value })} className={`flex-1 min-w-0 ${inputCls} border p-1.5 rounded-lg text-[11px]`} />
+            <button type="button" onClick={() => setType(ty.key, { enabled: !ty.enabled })} className={`w-11 h-6 rounded-full relative transition-colors flex-shrink-0 ${ty.enabled ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+              <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-all ${ty.enabled ? 'right-0.5' : 'left-0.5'}`} />
+            </button>
+          </div>
+          <div className="flex items-center space-x-3">
+            <button type="button" onClick={() => onPickIcon(ty.key)} className="text-[10px] text-indigo-400 font-semibold">Icon upload</button>
+            {ty.icon && <button type="button" onClick={() => setType(ty.key, { icon: '' })} className="text-[10px] text-red-400 font-semibold">Icon মুছুন</button>}
+          </div>
+          <textarea value={ty.instruction} onChange={(e) => setType(ty.key, { instruction: e.target.value })} rows={2} placeholder="Instruction (খালি রাখলে ডিফল্ট লেখা দেখাবে)" className={`w-full ${inputCls} border p-1.5 rounded-lg text-[11px]`} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ---- Request nirapotta niyom (UR Auto Payment) ----
 const REQ_COOLDOWN_MS = 4 * 60 * 1000;  // ekta request er por 4 minute opekkha
 const REQ_DAILY_LIMIT = 5;              // 24 ghontay sorbocco 5 ti (deposit/withdraw alada alada)
@@ -576,6 +710,12 @@ export default function App() {
     }, (err) => console.error('Payment methods sync error:', err));
     return () => unsub();
   }, []);
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'appData', 'globalRules'), (snap) => {
+      setGlobalRules(snap.exists() && Array.isArray(snap.data().list) ? snap.data().list : []);
+    }, (err) => console.error('Global rules sync error:', err));
+    return () => unsub();
+  }, []);
   const [iconUploadTarget, setIconUploadTarget] = useState(null);
   const [showCheckInModal, setShowCheckInModal] = useState(false);
    const [checkedInToday, setCheckedInToday] = useState(false);
@@ -620,6 +760,10 @@ export default function App() {
   const [selectedCategoryView, setSelectedCategoryView] = useState(null);
   const [showTotalPrizeInfo, setShowTotalPrizeInfo] = useState(false);
   const [showRulesInfo, setShowRulesInfo] = useState(false);
+  const [showGlobalRules, setShowGlobalRules] = useState(false);
+  const [globalRules, setGlobalRules] = useState([]);
+  const [newTourRulesList, setNewTourRulesList] = useState([]);
+  const [selectedTxType, setSelectedTxType] = useState('sendMoney');
   const [showParticipantsInfo, setShowParticipantsInfo] = useState(false);
   const [showAllResultsInfo, setShowAllResultsInfo] = useState(false);
 
@@ -1919,7 +2063,7 @@ export default function App() {
       for (const tpl of automatedTemplates) {
         if (tpl.lastGeneratedDate && tpl.lastGeneratedDate >= dateKey) continue;
         const matchId = `m_auto_${tpl.id}_${dateKey}`;
-        const newMatch = { id: matchId, templateId: tpl.id, generatedDate: dateKey, category: tpl.category, categoryId: tpl.categoryId, title: tpl.title, time: `${dateKey} ${tpl.timeLabel}`, prizePool: tpl.prizePool, perKill: tpl.perKill, entryFee: tpl.entryFee, map: tpl.map || 'BERMUDA', mode: tpl.mode, status: 'upcoming', started: false, slotsFilled: 0, totalSlots: tpl.totalSlots, image: tpl.image, rules: tpl.rules, roomInfo: { id: '', pass: '' }, prizeTable: tpl.prizeTable || [] };
+        const newMatch = { id: matchId, templateId: tpl.id, generatedDate: dateKey, category: tpl.category, categoryId: tpl.categoryId, title: tpl.title, time: `${dateKey} ${tpl.timeLabel}`, prizePool: tpl.prizePool, perKill: tpl.perKill, entryFee: tpl.entryFee, map: tpl.map || 'BERMUDA', mode: tpl.mode, status: 'upcoming', started: false, slotsFilled: 0, totalSlots: tpl.totalSlots, image: tpl.image, rules: tpl.rules, rulesList: tpl.rulesList || [], roomInfo: { id: '', pass: '' }, prizeTable: tpl.prizeTable || [] };
         try {
           const ref = doc(db, 'tournaments', matchId);
           await runTransaction(db, async (transaction) => {
@@ -2544,10 +2688,21 @@ export default function App() {
     });
   };
 
+    const getAddMoneyType = () => {
+      const pm = paymentMethodsConfig.find(m => m.name === paymentMethod) || {};
+      const types = getTxTypes(pm);
+      const enabled = types.filter(x => x.enabled);
+      return { pm, types, eff: enabled.find(x => x.key === selectedTxType) || enabled[0] || null };
+    };
     const handleAddMoneySubmit = async () => {
     const amt = parseFloat(amountInput);
     if (!amt || amt <= 0 || !trxIdInput || !senderNumberInput.trim()) {
       showToast('Sothik poriman, TrxID ebong Number din');
+      return;
+    }
+    const { eff: txTypeEff } = getAddMoneyType();
+    if (!txTypeEff) {
+      showToast('এই Payment Method-এর জন্য এই Transaction Type অনুমোদিত নয়।');
       return;
     }
     if (pendingDeposits.some(d => d.uid === user.uid)) {
@@ -2562,7 +2717,7 @@ export default function App() {
     }
     const trxKey = String(paymentMethod).toUpperCase() + '_' + cleanTrx;
     const depId = 'dep_' + Date.now();
-    const depObj = { id: depId, uid: user.uid, name: user.name, amount: amt, method: paymentMethod, trxId: trxIdInput, senderNumber: senderNumberInput.trim(), trxKey, createdAtMs: Date.now(), autoStatus: 'PENDING' };
+    const depObj = { id: depId, uid: user.uid, name: user.name, amount: amt, method: paymentMethod, trxId: trxIdInput, senderNumber: senderNumberInput.trim(), trxKey, createdAtMs: Date.now(), autoStatus: 'PENDING', txType: txTypeEff.key };
     try {
       // lock + deposit ekii transaction e: lock age thakle submit hobe na
       await runTransaction(db, async (tx) => {
@@ -2906,7 +3061,14 @@ export default function App() {
     setWithdrawRulesInput(appSettings.withdrawRules);
   };
 
-    const handleSaveAppSettings = () => {
+    const saveGlobalRules = async (list) => {
+    try {
+      await setDoc(doc(db, 'appData', 'globalRules'), { list, updatedAtMs: Date.now() });
+      showToast('URFF Tour Rules save hoyeche!');
+    } catch (e) { showToast('Save error: ' + e.message); }
+  };
+
+  const handleSaveAppSettings = () => {
     if (!paymentNumberInput.trim() || !contactNumberInput.trim()) {
       showToast('Payment number ebong contact number din');
       return;
@@ -2935,7 +3097,12 @@ export default function App() {
     const file = e.target.files && e.target.files[0];
     if (!file || !iconUploadTarget) return;
     compressImage(file, 150, 0.6).then(result => {
-      setPaymentMethodsConfig(prev => prev.map(m => m.name === iconUploadTarget ? { ...m, icon: result } : m));
+      const [pmName, typeKey] = String(iconUploadTarget).split('|');
+      setPaymentMethodsConfig(prev => prev.map(m => {
+        if (m.name !== pmName) return m;
+        if (!typeKey) return { ...m, icon: result };
+        return { ...m, types: { ...(m.types || {}), [typeKey]: { ...((m.types || {})[typeKey] || {}), icon: result } } };
+      }));
     });
   };
 
@@ -2991,6 +3158,7 @@ export default function App() {
     setNewTourPass('');
     setNewTourImage('');
     setNewTourRules('');
+    setNewTourRulesList([]);
     setNewTourTime(nowLocalInput());
     setNewTourCategoryId('cat_br');
     setNewTourMode('SOLO');
@@ -3049,6 +3217,9 @@ export default function App() {
       return;
     }
     const slotsNum = parseInt(newTourTotalSlots) || 48;
+    const cleanRulesList = (newTourRulesList || [])
+      .filter(r => (r.title || '').trim() || (r.body || '').trim())
+      .map(r => ({ id: r.id, title: (r.title || '').trim(), body: r.body || '' }));
     const formattedTime = newTourTime
       ? new Date(newTourTime).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }).replace(',', '')
       : null;
@@ -3069,6 +3240,7 @@ export default function App() {
         perKill: newTourPerKill.trim() === '' ? 10 : parseFloat(newTourPerKill),
         totalSlots: slotsNum,
         rules: newTourRules || oldT.rules,
+        rulesList: cleanRulesList,
         roomInfo: { id: newTourRoomId || oldT.roomInfo.id, pass: newTourPass || oldT.roomInfo.pass },
         image: newTourImage || oldT.image,
         categoryId: newTourCategoryId,
@@ -3097,6 +3269,7 @@ export default function App() {
         totalSlots: slotsNum,
         image: newTourImage || '🏆',
         rules: newTourRules || 'Standard tournament rules apply.',
+        rulesList: cleanRulesList,
         roomInfo: { id: newTourRoomId || '', pass: newTourPass || '' },
         prizeTable: cleanPrizeTable
       };
@@ -3119,6 +3292,7 @@ export default function App() {
     setNewTourPass(t.roomInfo.pass);
     setNewTourImage(t.image);
     setNewTourRules(t.rules);
+    setNewTourRulesList(Array.isArray(t.rulesList) ? t.rulesList : []);
     setNewTourTime('');
     setNewTourCategoryId(t.categoryId || 'cat_br');
     setNewTourMode(t.mode || 'SOLO');
@@ -3140,7 +3314,7 @@ export default function App() {
     const nextDateKey = dateKeyFromDate(nextDate);
     const matchId = `m_auto_${template.id}_${nextDateKey}`;
     const timeLabel = template.timeLabel || ((sourceMatch.time || '').trim().split(' ').slice(-2).join(' '));
-    const newMatch = { id: matchId, templateId: template.id, generatedDate: nextDateKey, category: template.category, categoryId: template.categoryId, title: template.title, time: `${nextDateKey} ${timeLabel}`, prizePool: template.prizePool, perKill: template.perKill, entryFee: template.entryFee, map: template.map || 'BERMUDA', mode: template.mode, status: 'upcoming', started: false, slotsFilled: 0, totalSlots: template.totalSlots, image: template.image, rules: template.rules, roomInfo: { id: '', pass: '' }, prizeTable: template.prizeTable || [] };
+    const newMatch = { id: matchId, templateId: template.id, generatedDate: nextDateKey, category: template.category, categoryId: template.categoryId, title: template.title, time: `${nextDateKey} ${timeLabel}`, prizePool: template.prizePool, perKill: template.perKill, entryFee: template.entryFee, map: template.map || 'BERMUDA', mode: template.mode, status: 'upcoming', started: false, slotsFilled: 0, totalSlots: template.totalSlots, image: template.image, rules: template.rules, rulesList: template.rulesList || [], roomInfo: { id: '', pass: '' }, prizeTable: template.prizeTable || [] };
 
     const ref = doc(db, 'tournaments', matchId);
     await runTransaction(db, async (transaction) => {
@@ -3229,6 +3403,7 @@ export default function App() {
       map: mt.map,
       image: mt.image,
       rules: mt.rules,
+      rulesList: mt.rulesList || [],
       timeLabel,
       lastGeneratedDate: (() => {
         const d = new Date();
@@ -4449,7 +4624,9 @@ ${buildUserContextBrief(uid)}`;
           </button>
           {showRulesInfo && (
             <div className={`${t.card} border ${t.border} rounded-xl p-4 -mt-2 space-y-2`}>
-              <p className="text-xs leading-relaxed text-slate-400">{mt.rules}</p>
+              {Array.isArray(mt.rulesList) && mt.rulesList.length > 0
+                ? <RulesAccordion rules={mt.rulesList} darkMode={darkMode} />
+                : <p className="text-xs leading-relaxed text-slate-400 whitespace-pre-wrap break-words">{mt.rules}</p>}
               <button onClick={() => setShowRulesInfo(false)} className={`w-full py-2 ${t.input} border rounded-lg text-xs font-bold flex items-center justify-center space-x-1.5`}>
                 <ArrowLeft className="w-3.5 h-3.5" /><span>Back</span>
               </button>
@@ -4776,6 +4953,10 @@ ${buildUserContextBrief(uid)}`;
                 </div>
 
                 <textarea value={newTourRules} onChange={(e) => setNewTourRules(e.target.value)} placeholder="Rules" rows={2} className={`w-full ${t.input} border p-2.5 rounded-xl text-xs`} />
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-bold text-slate-400">Tournament Rules (ইউজার Accordion আকারে দেখবে)</p>
+                  <RulesEditor rules={newTourRulesList} onChange={setNewTourRulesList} inputCls={t.input} darkMode={darkMode} />
+                </div>
                 <div className="flex space-x-2">
                   <button onClick={handleSaveTournament} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">{editingTourId ? 'UPDATE' : 'ADD TOURNAMENT'}</button>
                   {editingTourId && <button onClick={resetTourForm} className={`px-4 py-2.5 ${t.input} border rounded-xl text-xs font-bold`}>Cancel</button>}
@@ -6181,6 +6362,11 @@ ${buildUserContextBrief(uid)}`;
                   </button>
                 </div>
               ))}
+              {paymentMethodsConfig.map(pm => (
+                <PaymentTypesAdmin key={'pt_' + pm.name} pm={pm} darkMode={darkMode} inputCls={t.input}
+                  onChange={(fn) => setPaymentMethodsConfig(prev => prev.map(m => (m.name === pm.name ? fn(m) : m)))}
+                  onPickIcon={(typeKey) => { setIconUploadTarget(pm.name + '|' + typeKey); paymentIconFileInputRef.current && paymentIconFileInputRef.current.click(); }} />
+              ))}
               <input
                 ref={paymentIconFileInputRef}
                 type="file"
@@ -6188,6 +6374,11 @@ ${buildUserContextBrief(uid)}`;
                 onChange={handlePaymentIconUpload}
                 style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 }}
               />
+            </div>
+            <div className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-3 mt-4`}>
+              <p className="text-xs font-bold flex items-center space-x-1.5"><Lock className="w-4 h-4 text-indigo-400" /><span>URFF Tour Rules (পুরো অ্যাপের সাধারণ নিয়ম)</span></p>
+              <p className="text-[10px] text-slate-500">এখানে যোগ করা নিয়ম ইউজারের Profile → URFF Tour Rules-এ দেখাবে। Tournament-এর নিয়ম আলাদা (Tournament Add/Edit-এ)।</p>
+              <GlobalRulesAdmin rules={globalRules} onSave={saveGlobalRules} inputCls={t.input} darkMode={darkMode} />
             </div>
             </>
           )}
@@ -7062,6 +7253,7 @@ ${buildUserContextBrief(uid)}`;
               <button onClick={() => { const next=!soundEffectsEnabled; setSoundEffectsEnabled(next); try{localStorage.setItem('urff_sound_effects',next?'on':'off')}catch{}; if(next) playUiSound('success'); }} className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2"><span>🔊</span><span>Sound Effects</span></span><div className={`w-9 h-5 rounded-full ${soundEffectsEnabled?'bg-indigo-600':'bg-slate-600'} relative`}><div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 ${soundEffectsEnabled?'right-0.5':'left-0.5'}`} /></div></button>
               <button onClick={() => setDarkMode(!darkMode)} className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2">{darkMode ? <Moon className="w-4 h-4 text-indigo-400" /> : <Sun className="w-4 h-4 text-amber-400" />}<span>Dark Mode</span></span><div className={`w-9 h-5 rounded-full ${darkMode ? 'bg-indigo-600' : 'bg-slate-300'} relative`}><div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 ${darkMode ? 'right-0.5' : 'left-0.5'}`} /></div></button>
               <button onClick={() => setShowHistory(true)} className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2"><History className="w-4 h-4 text-slate-400" /><span>Transaction History</span></span><ChevronRight className="w-4 h-4 text-slate-500" /></button>
+              <button onClick={() => setShowGlobalRules(true)} className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2"><Lock className="w-4 h-4 text-slate-400" /><span>URFF Tour Rules</span></span><ChevronRight className="w-4 h-4 text-slate-500" /></button>
               <button onClick={() => showToast(`Support: ${appSettings.contactNumber}`)} className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2"><Headphones className="w-4 h-4 text-slate-400" /><span>Support</span></span><ChevronRight className="w-4 h-4 text-slate-500" /></button>
               {appSettings.telegramLink && <a href={appSettings.telegramLink} target="_blank" rel="noopener noreferrer" className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2"><Send className="w-4 h-4 text-sky-400" /><span>Join Our Telegram</span></span><ChevronRight className="w-4 h-4 text-slate-500" /></a>}
               <button onClick={() => setShowInviteFriends(true)} className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2"><Share2 className="w-4 h-4 text-slate-400" /><span>Invite Friends</span></span><span className="text-[10px] text-emerald-400">Earn ৳{INVITE_BONUS}</span></button>
@@ -7913,6 +8105,22 @@ ${buildUserContextBrief(uid)}`;
         </div>
       )}
 
+      {showGlobalRules && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setShowGlobalRules(false)}>
+          <div className={`${t.card} w-full max-w-sm rounded-2xl border ${t.border} max-h-[90vh] flex flex-col overflow-hidden`} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 pb-3 flex-shrink-0">
+              <h3 className="font-bold text-sm">URFF Tour Rules</h3>
+              <button type="button" onClick={() => setShowGlobalRules(false)} className="p-1"><X className="w-5 h-5 text-slate-400" /></button>
+            </div>
+            <div className="px-5 pb-5 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' }}>
+              {globalRules.length > 0
+                ? <RulesAccordion rules={globalRules} darkMode={darkMode} flat />
+                : <p className="text-xs text-slate-500">এখনো কোনো নিয়ম যোগ করা হয়নি।</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
       {walletAction === 'add' && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setWalletAction(null)}>
           <div className={`${t.card} w-full max-w-sm rounded-2xl border ${t.border} max-h-[90vh] flex flex-col overflow-hidden`} onClick={(e) => e.stopPropagation()}>
@@ -7928,13 +8136,34 @@ ${buildUserContextBrief(uid)}`;
                 {renderPaymentMethodSelector()}
               </div>
 
-                            <button onClick={() => copyToClipboard((paymentMethodsConfig.find(m => m.name === paymentMethod) || {}).number || appSettings.paymentNumber, 'Number')} className={`w-full text-left ${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-1`}>
-                <p className="text-[10px] text-slate-500">Send Money To This {paymentMethod} Number (Personal) — tap to copy</p>
-                <div className="flex items-center justify-between">
-                  <p className="font-mono font-bold text-sm text-indigo-400">{(paymentMethodsConfig.find(m => m.name === paymentMethod) || {}).number || appSettings.paymentNumber}</p>
-                  <Copy className="w-4 h-4 text-slate-400" />
-                </div>
-              </button>
+                            {(() => {
+                const { pm, types, eff } = getAddMoneyType();
+                const number = pm.number || appSettings.paymentNumber;
+                const acct = pm.accountType || 'Personal';
+                return (
+                  <>
+                    <div>
+                      <label className="text-xs text-slate-400 mb-1.5 block">Transaction Type</label>
+                      <PaymentTypeCards types={types} selected={eff ? eff.key : null} darkMode={darkMode}
+                        onSelect={setSelectedTxType}
+                        onBlocked={() => showToast('এই Payment Method-এর জন্য এই Transaction Type অনুমোদিত নয়।')} />
+                    </div>
+                    {!eff ? (
+                      <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 text-xs text-amber-400`}>
+                        এই মুহূর্তে {paymentMethod} দিয়ে Add Money করা যাচ্ছে না। অনুগ্রহ করে অন্য Payment Method বেছে নিন।
+                      </div>
+                    ) : (
+                      <button onClick={() => copyToClipboard(number, 'Number')} className={`w-full text-left ${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-1`}>
+                        <p className="text-[10px] text-slate-500">{eff.instruction || `${eff.verb} ${paymentMethod} Number (${acct}) — tap to copy`}</p>
+                        <div className="flex items-center justify-between">
+                          <p className="font-mono font-bold text-sm text-indigo-400">{number}</p>
+                          <Copy className="w-4 h-4 text-slate-400" />
+                        </div>
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
 
               <div>
                 <label className="text-xs text-slate-400">Amount (Taka)</label>
@@ -7949,7 +8178,7 @@ ${buildUserContextBrief(uid)}`;
                 <input value={senderNumberInput} onChange={(e) => setSenderNumberInput(e.target.value)} placeholder="017XXXXXXXX" className={`w-full ${t.input} border p-2.5 rounded-xl text-xs mt-1`} />
               </div>
 
-              <button onClick={handleAddMoneySubmit} disabled={depCooldownUntil > Date.now()} className="disabled:opacity-40 w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">SUBMIT REQUEST</button>
+              <button onClick={handleAddMoneySubmit} disabled={depCooldownUntil > Date.now() || !getAddMoneyType().eff} className="disabled:opacity-40 w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">SUBMIT REQUEST</button>
               <button type="button" onClick={() => setWalletAction(null)} className={`w-full py-2.5 ${t.input} border rounded-xl text-xs font-bold`}>CANCEL</button>
             </div>
           </div>
