@@ -252,17 +252,28 @@ function RulesAccordion({ rules, darkMode, flat }) {
   const [open, setOpen] = useState({});
   if (!rules || !rules.length) return null;
   return (
-    <div className={`space-y-2 ${flat ? '' : 'max-h-[60vh] overflow-y-auto overscroll-contain pr-1'}`} style={flat ? undefined : { WebkitOverflowScrolling: 'touch' }}>
+    <div className={`space-y-2.5 ${flat ? '' : 'max-h-[60vh] overflow-y-auto overscroll-contain pr-1'}`} style={flat ? undefined : { WebkitOverflowScrolling: 'touch' }}>
       {rules.map((r, i) => {
         const key = r.id || i;
         const isOpen = !!open[key];
+        const points = Array.isArray(r.points) ? r.points.filter(Boolean) : [];
         return (
-          <div key={key} className={`${darkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'} border rounded-xl overflow-hidden`}>
-            <button type="button" onClick={() => setOpen(p => ({ ...p, [key]: !p[key] }))} className="w-full flex items-center justify-between p-3 text-left">
-              <span className="text-xs font-bold pr-3 break-words min-w-0">{r.title}</span>
-              <ChevronRight className={`w-4 h-4 text-blue-400 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+          <div key={key} className={`${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-200'} border rounded-2xl overflow-hidden`}>
+            <button type="button" onClick={() => setOpen(p => ({ ...p, [key]: !p[key] }))} className="w-full flex items-center p-3.5 text-left">
+              <span className="w-7 h-7 rounded-full bg-blue-500/15 text-blue-400 text-xs font-black flex items-center justify-center flex-shrink-0 mr-3">{i + 1}</span>
+              <span className="flex-1 min-w-0 text-[13px] font-bold break-words">{r.title}</span>
+              <ChevronRight className={`w-4 h-4 text-blue-400 flex-shrink-0 ml-2 transition-transform duration-300 ${isOpen ? 'rotate-90' : ''}`} />
             </button>
-            {isOpen && <div className="px-3 pb-3 text-xs leading-relaxed text-slate-400 whitespace-pre-wrap break-words">{r.body}</div>}
+            <div className="grid transition-all duration-300 ease-in-out" style={{ gridTemplateRows: isOpen ? '1fr' : '0fr', opacity: isOpen ? 1 : 0 }}>
+              <div className="overflow-hidden">
+                <div className="pb-3.5 pr-3.5 space-y-1.5 text-xs leading-relaxed text-slate-400 break-words" style={{ paddingLeft: '3.25rem' }}>
+                  {r.body ? <p className="whitespace-pre-wrap">{r.body}</p> : null}
+                  {points.map((pt, k) => (
+                    <div key={k} className="flex items-start space-x-2"><span className="text-blue-400 mt-0.5">•</span><span className="flex-1 whitespace-pre-wrap">{pt}</span></div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         );
       })}
@@ -282,37 +293,47 @@ function RulesEditor({ rules, onChange, inputCls, darkMode }) {
   const del = (i) => { if (window.confirm('এই Rule মুছে ফেলবেন?')) onChange(rules.filter((_, k) => k !== i)); };
   return (
     <div className="space-y-2">
-      {rules.map((r, i) => (
-        <div key={r.id} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-2.5 space-y-1.5`}>
-          <div className="flex items-center space-x-1.5">
-            <span className="text-[10px] text-slate-500 font-bold w-5 flex-shrink-0">{i + 1}.</span>
-            <input value={r.title} onChange={(e) => upd(i, { title: e.target.value })} placeholder="Heading / Title" className={`flex-1 min-w-0 ${inputCls} border p-2 rounded-lg text-xs`} />
-            <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="px-2 py-1 text-xs font-bold disabled:opacity-30">↑</button>
-            <button type="button" onClick={() => move(i, 1)} disabled={i === rules.length - 1} className="px-2 py-1 text-xs font-bold disabled:opacity-30">↓</button>
-            <button type="button" onClick={() => del(i)} className="px-2 py-1 text-xs font-bold text-red-400">✕</button>
+      {rules.map((r, i) => {
+        const points = Array.isArray(r.points) ? r.points : [];
+        return (
+          <div key={r.id} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-2.5 space-y-1.5`}>
+            <div className="flex items-center space-x-1.5">
+              <span className="text-[10px] text-slate-500 font-bold w-5 flex-shrink-0">{i + 1}.</span>
+              <input value={r.title} onChange={(e) => upd(i, { title: e.target.value })} placeholder="Rule Title (যেমন: Game ID সঠিক প্রদান করুন)" className={`flex-1 min-w-0 ${inputCls} border p-2 rounded-lg text-xs`} />
+              <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="px-2 py-1 text-xs font-bold disabled:opacity-30">↑</button>
+              <button type="button" onClick={() => move(i, 1)} disabled={i === rules.length - 1} className="px-2 py-1 text-xs font-bold disabled:opacity-30">↓</button>
+              <button type="button" onClick={() => del(i)} className="px-2 py-1 text-xs font-bold text-red-400">✕</button>
+            </div>
+            <textarea value={r.body || ''} onChange={(e) => upd(i, { body: e.target.value })} rows={2} placeholder="ছোট বর্ণনা (ঐচ্ছিক)" className={`w-full ${inputCls} border p-2 rounded-lg text-xs`} />
+            {points.map((pt, k) => (
+              <div key={k} className="flex items-center space-x-1.5 pl-5">
+                <span className="text-blue-400 text-xs">•</span>
+                <input value={pt} onChange={(e) => upd(i, { points: points.map((x, q) => (q === k ? e.target.value : x)) })} placeholder={`Sub-point ${k + 1}`} className={`flex-1 min-w-0 ${inputCls} border p-1.5 rounded-lg text-xs`} />
+                <button type="button" onClick={() => upd(i, { points: points.filter((_, q) => q !== k) })} className="px-1.5 text-xs font-bold text-red-400">✕</button>
+              </div>
+            ))}
+            <button type="button" onClick={() => upd(i, { points: [...points, ''] })} className="ml-5 text-[11px] font-bold text-blue-400">+ Sub-point যোগ করুন</button>
           </div>
-          <textarea value={r.body} onChange={(e) => upd(i, { body: e.target.value })} rows={3} placeholder="বিস্তারিত Description" className={`w-full ${inputCls} border p-2 rounded-lg text-xs`} />
-        </div>
-      ))}
-      <button type="button" onClick={() => onChange([...rules, { id: 'r_' + Date.now() + '_' + Math.floor(Math.random() * 1000), title: '', body: '' }])} className={`w-full py-2 ${inputCls} border rounded-xl text-xs font-bold`}>+ Add Rule</button>
+        );
+      })}
+      <button type="button" onClick={() => onChange([...rules, { id: 'r_' + Date.now() + '_' + Math.floor(Math.random() * 1000), title: '', body: '', points: [] }])} className={`w-full py-2 ${inputCls} border rounded-xl text-xs font-bold`}>+ Add Rule</button>
     </div>
   );
 }
 
-function GlobalRulesAdmin({ rules, onSave, inputCls, darkMode }) {
-  const [draft, setDraft] = useState(rules || []);
-  const [dirty, setDirty] = useState(false);
-  useEffect(() => { if (!dirty) setDraft(rules || []); }, [rules, dirty]);
-  return (
-    <div className="space-y-2">
-      <RulesEditor rules={draft} onChange={(next) => { setDraft(next); setDirty(true); }} inputCls={inputCls} darkMode={darkMode} />
-      <button type="button" onClick={async () => {
-        const clean = draft.filter(r => (r.title || '').trim() || (r.body || '').trim());
-        await onSave(clean);
-        setDraft(clean); setDirty(false);
-      }} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">SAVE URFF TOUR RULES</button>
-    </div>
-  );
+// Tournament-er tarikh ber kora ("2026-10-12 ..." othoba "10/12/2026 08:00 PM")
+function matchDayOf(m) {
+  if (m && /^\d{4}-\d{2}-\d{2}$/.test(m.generatedDate || '')) return m.generatedDate;
+  const t = String((m && m.time) || '');
+  let r = /^(\d{4}-\d{2}-\d{2})/.exec(t);
+  if (r) return r[1];
+  r = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(t);
+  if (r) return `${r[3]}-${r[1]}-${r[2]}`;
+  return null;
+}
+function isPastMatchDay(m) {
+  const d = matchDayOf(m);
+  return !!d && d < _dateKey();
 }
 
 const TX_TYPES = [
@@ -710,12 +731,6 @@ export default function App() {
     }, (err) => console.error('Payment methods sync error:', err));
     return () => unsub();
   }, []);
-  useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'appData', 'globalRules'), (snap) => {
-      setGlobalRules(snap.exists() && Array.isArray(snap.data().list) ? snap.data().list : []);
-    }, (err) => console.error('Global rules sync error:', err));
-    return () => unsub();
-  }, []);
   const [iconUploadTarget, setIconUploadTarget] = useState(null);
   const [showCheckInModal, setShowCheckInModal] = useState(false);
    const [checkedInToday, setCheckedInToday] = useState(false);
@@ -760,8 +775,6 @@ export default function App() {
   const [selectedCategoryView, setSelectedCategoryView] = useState(null);
   const [showTotalPrizeInfo, setShowTotalPrizeInfo] = useState(false);
   const [showRulesInfo, setShowRulesInfo] = useState(false);
-  const [showGlobalRules, setShowGlobalRules] = useState(false);
-  const [globalRules, setGlobalRules] = useState([]);
   const [newTourRulesList, setNewTourRulesList] = useState([]);
   const [selectedTxType, setSelectedTxType] = useState('sendMoney');
   const [showParticipantsInfo, setShowParticipantsInfo] = useState(false);
@@ -2080,25 +2093,23 @@ export default function App() {
     return () => clearInterval(interval);
   }, [automatedTemplates]);
 
-  // When daily automation is active, automated matches from earlier dates are removed
-  // (only matches that already started/finished, so unplayed paid entries are never lost).
+  // Auto-clean: ager tarikher tournament admin list theke muche jay.
+  // Shudhu 'tournaments' collection theke; 'automatedTemplates' (daily schedule) kokhono chhua hoy na.
+  // Nirapod shorto: match khela hoyeche (started/live/completed) ba kono player join kore ni (slotsFilled = 0).
+  // Entry fee diye join kora, kintu khela hoy ni emon match auto-delete hoy na (taka haraye jabe).
   const _autoDeletedRef = useRef(new Set());
   useEffect(() => {
-    if (!automatedTemplates.length) return;
-    const tplIds = new Set(automatedTemplates.map(tp => tp.id));
-    const n = new Date();
-    const todayKey = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
     tournaments.forEach(m => {
-      if (!(m.templateId || tplIds.has(m.id))) return;
-      if (!(m.started || m.status === 'completed' || m.status === 'live')) return;
-      const day = m.generatedDate || String(m.time || '').slice(0, 10);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day >= todayKey) return;
       if (_autoDeletedRef.current.has(m.id)) return;
+      if (!isPastMatchDay(m)) return;
+      const played = m.started || m.status === 'completed' || m.status === 'live';
+      const empty = Number(m.slotsFilled || 0) === 0;
+      if (!played && !empty) return;
       _autoDeletedRef.current.add(m.id);
       deleteDoc(doc(db, 'tournaments', m.id)).catch(e => console.error('Old match delete error:', e));
       setTournaments(prev => prev.filter(x => x.id !== m.id));
     });
-  }, [automatedTemplates, tournaments]);
+  }, [tournaments]);
 
   // ================= Date-based filtering =================
   // ================= Language (EN / BN) =================
@@ -2144,10 +2155,10 @@ export default function App() {
   const [profileShowFollowInput, setProfileShowFollowInput] = useState(true);
 
   // ================= URTBV (content controlled from Admin Panel) =================
-  const [urtbv, setUrtbv] = useState({ social: {}, videos: [], about: [] });
+  const [urtbv, setUrtbv] = useState({ social: {}, videos: [], about: [], rules: [] });
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'appData', 'urtbv'), (snap) => {
-      if (snap.exists()) { const d = snap.data(); setUrtbv({ social: d.social || {}, videos: d.videos || [], about: d.about || [] }); }
+      if (snap.exists()) { const d = snap.data(); setUrtbv({ social: d.social || {}, videos: d.videos || [], about: d.about || [], rules: d.rules || [] }); }
     }, (e) => console.error('URTBV listen error:', e));
     return () => unsub();
   }, []);
@@ -2175,6 +2186,8 @@ export default function App() {
   useEffect(() => { setSocialDraft(urtbv.social || {}); }, [urtbv.social]);
   const [vf, setVf] = useState({ id: '', title: '', link: '', thumb: '', date: _dateKey() });
   const [af, setAf] = useState({ id: '', title: '', image: '', description: '', link: '', order: '' });
+  const EMPTY_RF = { id: '', title: '', description: '', image: '', icon: '', videoUrl: '', youtubeUrl: '', order: '' };
+  const [rf, setRf] = useState(EMPTY_RF);
 
   // ================= Player / Team profiles =================
   const [playerProfiles, setPlayerProfiles] = useState([]);
@@ -3061,14 +3074,7 @@ export default function App() {
     setWithdrawRulesInput(appSettings.withdrawRules);
   };
 
-    const saveGlobalRules = async (list) => {
-    try {
-      await setDoc(doc(db, 'appData', 'globalRules'), { list, updatedAtMs: Date.now() });
-      showToast('URFF Tour Rules save hoyeche!');
-    } catch (e) { showToast('Save error: ' + e.message); }
-  };
-
-  const handleSaveAppSettings = () => {
+    const handleSaveAppSettings = () => {
     if (!paymentNumberInput.trim() || !contactNumberInput.trim()) {
       showToast('Payment number ebong contact number din');
       return;
@@ -3218,8 +3224,8 @@ export default function App() {
     }
     const slotsNum = parseInt(newTourTotalSlots) || 48;
     const cleanRulesList = (newTourRulesList || [])
-      .filter(r => (r.title || '').trim() || (r.body || '').trim())
-      .map(r => ({ id: r.id, title: (r.title || '').trim(), body: r.body || '' }));
+      .map(r => ({ id: r.id, title: (r.title || '').trim(), body: r.body || '', points: (r.points || []).map(x => String(x).trim()).filter(Boolean) }))
+      .filter(r => r.title || r.body.trim() || r.points.length);
     const formattedTime = newTourTime
       ? new Date(newTourTime).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }).replace(',', '')
       : null;
@@ -4623,13 +4629,16 @@ ${buildUserContextBrief(uid)}`;
             <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${showRulesInfo ? 'rotate-90' : ''}`} />
           </button>
           {showRulesInfo && (
-            <div className={`${t.card} border ${t.border} rounded-xl p-4 -mt-2 space-y-2`}>
-              {Array.isArray(mt.rulesList) && mt.rulesList.length > 0
-                ? <RulesAccordion rules={mt.rulesList} darkMode={darkMode} />
-                : <p className="text-xs leading-relaxed text-slate-400 whitespace-pre-wrap break-words">{mt.rules}</p>}
-              <button onClick={() => setShowRulesInfo(false)} className={`w-full py-2 ${t.input} border rounded-lg text-xs font-bold flex items-center justify-center space-x-1.5`}>
-                <ArrowLeft className="w-3.5 h-3.5" /><span>Back</span>
-              </button>
+            <div className={`fixed inset-0 z-[70] flex flex-col ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'}`}>
+              <div className={`flex items-center space-x-3 p-4 border-b ${darkMode ? 'border-slate-800' : 'border-slate-200'} flex-shrink-0`}>
+                <button type="button" onClick={() => setShowRulesInfo(false)} className={`p-2 rounded-xl ${darkMode ? 'bg-slate-800' : 'bg-slate-200'}`}><ArrowLeft className="w-5 h-5" /></button>
+                <h2 className="text-sm font-black tracking-widest">MATCH RULES</h2>
+              </div>
+              <div className="flex-1 overflow-y-auto overscroll-contain p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+                {Array.isArray(mt.rulesList) && mt.rulesList.length > 0
+                  ? <RulesAccordion rules={mt.rulesList} darkMode={darkMode} flat />
+                  : <p className="text-xs leading-relaxed text-slate-400 whitespace-pre-wrap break-words">{mt.rules}</p>}
+              </div>
             </div>
           )}
 
@@ -5005,7 +5014,7 @@ ${buildUserContextBrief(uid)}`;
               </div>
 
               <div className="space-y-2">
-                {tournaments.map(mt => (
+                {tournaments.filter(mt => !isPastMatchDay(mt)).map(mt => (
                   <div key={mt.id} className={`${t.card} border ${t.border} rounded-xl p-3 space-y-2`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
@@ -5034,6 +5043,21 @@ ${buildUserContextBrief(uid)}`;
                     </button>
                   </div>
                 ))}
+                {(() => {
+                  const past = tournaments.filter(isPastMatchDay);
+                  if (!past.length) return null;
+                  return (
+                    <div className={`${t.card} border border-amber-500/30 rounded-xl p-3 space-y-2`}>
+                      <p className="text-[11px] font-bold text-amber-400">পুরনো tournament ({past.length}) — entry আছে কিন্তু শেষ হয়নি, তাই নিজে থেকে মোছা হয়নি</p>
+                      {past.map(mt => (
+                        <div key={mt.id} className="flex items-center justify-between space-x-2">
+                          <p className="text-[10px] text-slate-400 truncate flex-1">{mt.title} • {mt.time} • {mt.slotsFilled}/{mt.totalSlots}</p>
+                          <button onClick={() => handleDeleteTournament(mt.id)} className="p-1.5 bg-red-500/10 rounded-lg flex-shrink-0"><Trash2 className="w-3.5 h-3.5 text-red-400" /></button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             </>
           )}
@@ -5789,7 +5813,7 @@ ${buildUserContextBrief(uid)}`;
               <div className="space-y-4">
                 <p className="text-xs font-bold flex items-center space-x-1.5"><Globe className="w-4 h-4 text-indigo-400" /><span>URTBV Management</span></p>
                 <div className="flex space-x-2 overflow-x-auto pb-1">
-                  {secBtn('social', 'Social Links')}{secBtn('videos', 'Daily Tour Best Time')}{secBtn('about', 'About Banners')}{secBtn('players', 'Players Approval')}{secBtn('teams', 'Teams & Verification')}
+                  {secBtn('social', 'Social Links')}{secBtn('videos', 'Daily Tour Best Time')}{secBtn('about', 'About Banners')}{secBtn('players', 'Players Approval')}{secBtn('teams', 'Teams & Verification')}{secBtn('rules', 'App Rules')}
                 </div>
 
                 {adminUrtbvSection === 'social' && platforms.map(([key, label]) => {
@@ -5879,6 +5903,53 @@ ${buildUserContextBrief(uid)}`;
                         <Toggle on={b.enabled !== false} onClick={() => saveUrtbv({ ...urtbv, about: (urtbv.about || []).map(x => x.id === b.id ? { ...x, enabled: x.enabled === false } : x) })} />
                         <button onClick={() => setAf({ id: b.id, title: b.title || '', image: b.image || '', description: b.description || '', link: b.link || '', order: String(b.order || '') })} className="p-1.5 text-indigo-400"><Edit3 className="w-4 h-4" /></button>
                         <button onClick={() => saveUrtbv({ ...urtbv, about: (urtbv.about || []).filter(x => x.id !== b.id) }, 'Banner delete kora hoyeche!')} className="p-1.5 text-red-400"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {adminUrtbvSection === 'rules' && (
+                  <>
+                    <div className={card}>
+                      <p className="text-xs font-bold">{rf.id ? 'Edit Rule' : 'Add Rule'} ({(urtbv.rules || []).length}) <span className="text-[10px] font-normal text-slate-500">— সব ফিল্ড ঐচ্ছিক</span></p>
+                      {rf.image && <div className="rounded-xl overflow-hidden bg-slate-800" style={{ aspectRatio: '667/340' }}><img src={rf.image} alt="" className="w-full h-full object-cover" /></div>}
+                      <div className="flex space-x-2">
+                        <label className={`flex-1 text-center py-2.5 ${t.input} border border-dashed rounded-xl text-xs font-bold cursor-pointer`}>Banner Image<input type="file" accept="image/*" className="hidden" onChange={pickImage((v) => setRf(prev => ({ ...prev, image: v })))} /></label>
+                        <label className={`flex-1 text-center py-2.5 ${t.input} border border-dashed rounded-xl text-xs font-bold cursor-pointer`}>{rf.icon ? '✓ Icon' : 'Icon'}<input type="file" accept="image/*" className="hidden" onChange={pickImageChecked((v) => setRf(prev => ({ ...prev, icon: v })), 150, 0.7)} /></label>
+                      </div>
+                      {(rf.image || rf.icon) && (
+                        <div className="flex space-x-4">
+                          {rf.image && <button type="button" onClick={() => setRf({ ...rf, image: '' })} className="text-[10px] text-red-400 font-semibold">Banner মুছুন</button>}
+                          {rf.icon && <button type="button" onClick={() => setRf({ ...rf, icon: '' })} className="text-[10px] text-red-400 font-semibold">Icon মুছুন</button>}
+                        </div>
+                      )}
+                      <input value={rf.title} onChange={(e) => setRf({ ...rf, title: e.target.value })} placeholder="Title" className={inp} />
+                      <textarea value={rf.description} onChange={(e) => setRf({ ...rf, description: e.target.value })} placeholder="Description" rows={3} className={inp} />
+                      <input value={rf.videoUrl} onChange={(e) => setRf({ ...rf, videoUrl: e.target.value })} placeholder="Direct Video Link (.mp4 ইত্যাদি)" className={inp} />
+                      <input value={rf.youtubeUrl} onChange={(e) => setRf({ ...rf, youtubeUrl: e.target.value })} placeholder="YouTube Link" className={inp} />
+                      <input value={rf.order} onChange={(e) => setRf({ ...rf, order: e.target.value.replace(/[^0-9]/g, '') })} placeholder="Order / Position (1, 2, 3...)" inputMode="numeric" className={inp} />
+                      <div className="flex space-x-2">
+                        <button onClick={() => {
+                          const item = { id: rf.id || ('ur_' + Date.now()), title: rf.title.trim(), description: rf.description.trim(), image: rf.image, icon: rf.icon, videoUrl: rf.videoUrl.trim(), youtubeUrl: rf.youtubeUrl.trim(), order: rf.order, enabled: true };
+                          if (!item.title && !item.description && !item.image && !item.icon && !item.videoUrl && !item.youtubeUrl) { showToast('Kom kore ekta field din'); return; }
+                          const old = (urtbv.rules || []).find(x => x.id === item.id);
+                          if (old) item.enabled = old.enabled !== false;
+                          const list = old ? (urtbv.rules || []).map(x => x.id === item.id ? item : x) : [...(urtbv.rules || []), item];
+                          const next = { ...urtbv, rules: list };
+                          if (JSON.stringify(next).length > 900000) { showToast('Data boro hoye jachhe (1MB er kache). Choto image din ba purono item muchun.'); return; }
+                          saveUrtbv(next, rf.id ? 'Rule update kora hoyeche!' : 'Rule add kora hoyeche!');
+                          setRf(EMPTY_RF);
+                        }} className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold">{rf.id ? 'UPDATE RULE' : 'ADD RULE'}</button>
+                        {rf.id && <button onClick={() => setRf(EMPTY_RF)} className={`px-4 py-2.5 ${t.input} border rounded-xl text-xs font-bold`}>Cancel</button>}
+                      </div>
+                    </div>
+                    {[...(urtbv.rules || [])].sort((a, b) => (Number(a.order) || 999) - (Number(b.order) || 999)).map(b => (
+                      <div key={b.id} className={`${t.card} border ${t.border} rounded-xl p-3 flex items-center space-x-3`}>
+                        <div className="w-16 h-10 rounded-lg bg-slate-800 overflow-hidden flex-shrink-0">{(b.image || b.icon) && <img src={b.image || b.icon} alt="" className="w-full h-full object-cover" />}</div>
+                        <div className="min-w-0 flex-1"><p className="text-xs font-bold truncate">{b.title || 'Untitled'}</p><p className="text-[10px] text-slate-500">Order: {b.order || '-'}</p></div>
+                        <Toggle on={b.enabled !== false} onClick={() => saveUrtbv({ ...urtbv, rules: (urtbv.rules || []).map(x => x.id === b.id ? { ...x, enabled: x.enabled === false } : x) })} />
+                        <button onClick={() => setRf({ id: b.id, title: b.title || '', description: b.description || '', image: b.image || '', icon: b.icon || '', videoUrl: b.videoUrl || '', youtubeUrl: b.youtubeUrl || '', order: String(b.order || '') })} className="p-1.5 text-indigo-400"><Edit3 className="w-4 h-4" /></button>
+                        <button onClick={() => { if (window.confirm('এই Rule মুছে ফেলবেন?')) saveUrtbv({ ...urtbv, rules: (urtbv.rules || []).filter(x => x.id !== b.id) }, 'Rule delete kora hoyeche!'); }} className="p-1.5 text-red-400"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     ))}
                   </>
@@ -6375,11 +6446,6 @@ ${buildUserContextBrief(uid)}`;
                 style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 }}
               />
             </div>
-            <div className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-3 mt-4`}>
-              <p className="text-xs font-bold flex items-center space-x-1.5"><Lock className="w-4 h-4 text-indigo-400" /><span>URFF Tour Rules (পুরো অ্যাপের সাধারণ নিয়ম)</span></p>
-              <p className="text-[10px] text-slate-500">এখানে যোগ করা নিয়ম ইউজারের Profile → URFF Tour Rules-এ দেখাবে। Tournament-এর নিয়ম আলাদা (Tournament Add/Edit-এ)।</p>
-              <GlobalRulesAdmin rules={globalRules} onSave={saveGlobalRules} inputCls={t.input} darkMode={darkMode} />
-            </div>
             </>
           )}
         </div>
@@ -6788,6 +6854,34 @@ ${buildUserContextBrief(uid)}`;
           );
         }
 
+        if (urtbvView === 'rules') {
+          const items = [...(urtbv.rules || [])].filter(b => b.enabled !== false).sort((a, b) => (Number(a.order) || 999) - (Number(b.order) || 999));
+          return (
+            <div className="p-4 space-y-4">
+              {backBtn('menu')}
+              <h2 className="text-lg font-black">UR FF Tour App All Rules</h2>
+              {items.length === 0 ? <p className="text-xs text-slate-500 text-center py-10">Ekhono kono rule nei.</p> : items.map(b => (
+                <div key={b.id} className={`${cardBase} overflow-hidden`}>
+                  {b.image && <img src={b.image} alt="" className="w-full object-cover" style={{ aspectRatio: '667/340' }} />}
+                  <div className="p-3 space-y-2.5">
+                    {(b.icon || b.title) && (
+                      <div className="flex items-center space-x-2.5">
+                        {b.icon && <img src={b.icon} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />}
+                        {b.title && <p className="text-sm font-black break-words min-w-0">{b.title}</p>}
+                      </div>
+                    )}
+                    {b.description && <p className="text-xs text-slate-400 whitespace-pre-line break-words">{b.description}</p>}
+                    {b.videoUrl && (_youtubeEmbed(b.videoUrl)
+                      ? <div className="bg-black rounded-xl overflow-hidden" style={{ aspectRatio: '16/9' }}><iframe src={_youtubeEmbed(b.videoUrl)} title="video" className="w-full h-full" allow="encrypted-media; picture-in-picture" allowFullScreen /></div>
+                      : <video src={b.videoUrl} controls playsInline preload="metadata" className="w-full rounded-xl bg-black" style={{ aspectRatio: '16/9' }} />)}
+                    {b.youtubeUrl && <button onClick={() => openExternal(b.youtubeUrl)} className="w-full py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold">▶ Watch on YouTube</button>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        }
+
         if (urtbvView === 'about') {
           const items = [...(urtbv.about || [])].filter(b => b.enabled !== false).sort((a, b) => (Number(a.order) || 999) - (Number(b.order) || 999));
           return (
@@ -7014,6 +7108,9 @@ ${buildUserContextBrief(uid)}`;
             </button>
             <button onClick={() => setUrtbvView('teams')} className={`${cardBase} w-full p-4 flex items-center justify-between`}>
               <span className="text-sm font-bold">{tr('Team & Player', 'টিম ও প্লেয়ার')}</span><ChevronRight className="w-4 h-4 text-slate-500" />
+            </button>
+            <button onClick={() => setUrtbvView('rules')} className={`${cardBase} w-full p-4 flex items-center justify-between`}>
+              <span className="text-sm font-bold">UR FF Tour App All Rules</span><ChevronRight className="w-4 h-4 text-slate-500" />
             </button>
           </div>
         );
@@ -7253,7 +7350,6 @@ ${buildUserContextBrief(uid)}`;
               <button onClick={() => { const next=!soundEffectsEnabled; setSoundEffectsEnabled(next); try{localStorage.setItem('urff_sound_effects',next?'on':'off')}catch{}; if(next) playUiSound('success'); }} className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2"><span>🔊</span><span>Sound Effects</span></span><div className={`w-9 h-5 rounded-full ${soundEffectsEnabled?'bg-indigo-600':'bg-slate-600'} relative`}><div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 ${soundEffectsEnabled?'right-0.5':'left-0.5'}`} /></div></button>
               <button onClick={() => setDarkMode(!darkMode)} className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2">{darkMode ? <Moon className="w-4 h-4 text-indigo-400" /> : <Sun className="w-4 h-4 text-amber-400" />}<span>Dark Mode</span></span><div className={`w-9 h-5 rounded-full ${darkMode ? 'bg-indigo-600' : 'bg-slate-300'} relative`}><div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 ${darkMode ? 'right-0.5' : 'left-0.5'}`} /></div></button>
               <button onClick={() => setShowHistory(true)} className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2"><History className="w-4 h-4 text-slate-400" /><span>Transaction History</span></span><ChevronRight className="w-4 h-4 text-slate-500" /></button>
-              <button onClick={() => setShowGlobalRules(true)} className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2"><Lock className="w-4 h-4 text-slate-400" /><span>URFF Tour Rules</span></span><ChevronRight className="w-4 h-4 text-slate-500" /></button>
               <button onClick={() => showToast(`Support: ${appSettings.contactNumber}`)} className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2"><Headphones className="w-4 h-4 text-slate-400" /><span>Support</span></span><ChevronRight className="w-4 h-4 text-slate-500" /></button>
               {appSettings.telegramLink && <a href={appSettings.telegramLink} target="_blank" rel="noopener noreferrer" className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2"><Send className="w-4 h-4 text-sky-400" /><span>Join Our Telegram</span></span><ChevronRight className="w-4 h-4 text-slate-500" /></a>}
               <button onClick={() => setShowInviteFriends(true)} className="w-full flex items-center justify-between p-4 text-xs font-semibold"><span className="flex items-center space-x-2"><Share2 className="w-4 h-4 text-slate-400" /><span>Invite Friends</span></span><span className="text-[10px] text-emerald-400">Earn ৳{INVITE_BONUS}</span></button>
@@ -8100,22 +8196,6 @@ ${buildUserContextBrief(uid)}`;
                   ))}
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showGlobalRules && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setShowGlobalRules(false)}>
-          <div className={`${t.card} w-full max-w-sm rounded-2xl border ${t.border} max-h-[90vh] flex flex-col overflow-hidden`} onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-5 pb-3 flex-shrink-0">
-              <h3 className="font-bold text-sm">URFF Tour Rules</h3>
-              <button type="button" onClick={() => setShowGlobalRules(false)} className="p-1"><X className="w-5 h-5 text-slate-400" /></button>
-            </div>
-            <div className="px-5 pb-5 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' }}>
-              {globalRules.length > 0
-                ? <RulesAccordion rules={globalRules} darkMode={darkMode} flat />
-                : <p className="text-xs text-slate-500">এখনো কোনো নিয়ম যোগ করা হয়নি।</p>}
             </div>
           </div>
         </div>
