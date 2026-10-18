@@ -2180,13 +2180,14 @@ export default function App() {
     e.target.value = '';
   };
   const [urtbvView, setUrtbvView] = useState('menu'); // menu | videos | about | teams
+  const [urtbvRuleId, setUrtbvRuleId] = useState(null);
   const [videoPlayer, setVideoPlayer] = useState(null);
   const [adminUrtbvSection, setAdminUrtbvSection] = useState('social');
   const [socialDraft, setSocialDraft] = useState({});
   useEffect(() => { setSocialDraft(urtbv.social || {}); }, [urtbv.social]);
   const [vf, setVf] = useState({ id: '', title: '', link: '', thumb: '', date: _dateKey() });
   const [af, setAf] = useState({ id: '', title: '', image: '', description: '', link: '', order: '' });
-  const EMPTY_RF = { id: '', title: '', description: '', image: '', icon: '', videoUrl: '', youtubeUrl: '', order: '' };
+  const EMPTY_RF = { id: '', title: '', summary: '', description: '', image: '', icon: '', videoUrl: '', youtubeUrl: '', order: '' };
   const [rf, setRf] = useState(EMPTY_RF);
 
   // ================= Player / Team profiles =================
@@ -5924,13 +5925,14 @@ ${buildUserContextBrief(uid)}`;
                         </div>
                       )}
                       <input value={rf.title} onChange={(e) => setRf({ ...rf, title: e.target.value })} placeholder="Title" className={inp} />
-                      <textarea value={rf.description} onChange={(e) => setRf({ ...rf, description: e.target.value })} placeholder="Description" rows={3} className={inp} />
+                      <input value={rf.summary} onChange={(e) => setRf({ ...rf, summary: e.target.value })} placeholder="সংক্ষিপ্ত বিবরণ (কার্ডে দেখাবে; খালি রাখলে সম্পূর্ণ বিবরণের শুরু দেখাবে)" className={inp} />
+                      <textarea value={rf.description} onChange={(e) => setRf({ ...rf, description: e.target.value })} placeholder="সম্পূর্ণ বিবরণ (Click and See Rules পাতায় দেখাবে)" rows={5} className={inp} />
                       <input value={rf.videoUrl} onChange={(e) => setRf({ ...rf, videoUrl: e.target.value })} placeholder="Direct Video Link (.mp4 ইত্যাদি)" className={inp} />
                       <input value={rf.youtubeUrl} onChange={(e) => setRf({ ...rf, youtubeUrl: e.target.value })} placeholder="YouTube Link" className={inp} />
                       <input value={rf.order} onChange={(e) => setRf({ ...rf, order: e.target.value.replace(/[^0-9]/g, '') })} placeholder="Order / Position (1, 2, 3...)" inputMode="numeric" className={inp} />
                       <div className="flex space-x-2">
                         <button onClick={() => {
-                          const item = { id: rf.id || ('ur_' + Date.now()), title: rf.title.trim(), description: rf.description.trim(), image: rf.image, icon: rf.icon, videoUrl: rf.videoUrl.trim(), youtubeUrl: rf.youtubeUrl.trim(), order: rf.order, enabled: true };
+                          const item = { id: rf.id || ('ur_' + Date.now()), title: rf.title.trim(), summary: rf.summary.trim(), description: rf.description.trim(), image: rf.image, icon: rf.icon, videoUrl: rf.videoUrl.trim(), youtubeUrl: rf.youtubeUrl.trim(), order: rf.order, enabled: true };
                           if (!item.title && !item.description && !item.image && !item.icon && !item.videoUrl && !item.youtubeUrl) { showToast('Kom kore ekta field din'); return; }
                           const old = (urtbv.rules || []).find(x => x.id === item.id);
                           if (old) item.enabled = old.enabled !== false;
@@ -5947,8 +5949,9 @@ ${buildUserContextBrief(uid)}`;
                       <div key={b.id} className={`${t.card} border ${t.border} rounded-xl p-3 flex items-center space-x-3`}>
                         <div className="w-16 h-10 rounded-lg bg-slate-800 overflow-hidden flex-shrink-0">{(b.image || b.icon) && <img src={b.image || b.icon} alt="" className="w-full h-full object-cover" />}</div>
                         <div className="min-w-0 flex-1"><p className="text-xs font-bold truncate">{b.title || 'Untitled'}</p><p className="text-[10px] text-slate-500">Order: {b.order || '-'}</p></div>
+                        <span className={`text-[9px] font-bold flex-shrink-0 ${b.enabled !== false ? 'text-emerald-400' : 'text-slate-500'}`}>{b.enabled !== false ? 'Published' : 'Hidden'}</span>
                         <Toggle on={b.enabled !== false} onClick={() => saveUrtbv({ ...urtbv, rules: (urtbv.rules || []).map(x => x.id === b.id ? { ...x, enabled: x.enabled === false } : x) })} />
-                        <button onClick={() => setRf({ id: b.id, title: b.title || '', description: b.description || '', image: b.image || '', icon: b.icon || '', videoUrl: b.videoUrl || '', youtubeUrl: b.youtubeUrl || '', order: String(b.order || '') })} className="p-1.5 text-indigo-400"><Edit3 className="w-4 h-4" /></button>
+                        <button onClick={() => setRf({ id: b.id, title: b.title || '', summary: b.summary || '', description: b.description || '', image: b.image || '', icon: b.icon || '', videoUrl: b.videoUrl || '', youtubeUrl: b.youtubeUrl || '', order: String(b.order || '') })} className="p-1.5 text-indigo-400"><Edit3 className="w-4 h-4" /></button>
                         <button onClick={() => { if (window.confirm('এই Rule মুছে ফেলবেন?')) saveUrtbv({ ...urtbv, rules: (urtbv.rules || []).filter(x => x.id !== b.id) }, 'Rule delete kora hoyeche!'); }} className="p-1.5 text-red-400"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     ))}
@@ -6855,12 +6858,44 @@ ${buildUserContextBrief(uid)}`;
         }
 
         if (urtbvView === 'rules') {
-          const items = [...(urtbv.rules || [])].filter(b => b.enabled !== false).sort((a, b) => (Number(a.order) || 999) - (Number(b.order) || 999));
+          const all = [...(urtbv.rules || [])].filter(b => b.enabled !== false).sort((a, b) => (Number(a.order) || 999) - (Number(b.order) || 999));
+          const sel = urtbvRuleId ? all.find(b => b.id === urtbvRuleId) : null;
+          const shortOf = (b) => (b.summary && b.summary.trim()) || (b.description ? (b.description.length > 110 ? b.description.slice(0, 110).trim() + '…' : b.description) : '');
+          const openVideo = (title, link) => setVideoPlayer({ title, link });
+
+          // ---------- Click and See Rules: alada page ----------
+          if (sel) {
+            return (
+              <div className="p-4 space-y-4">
+                <button onClick={() => setUrtbvRuleId(null)} className="flex items-center space-x-1 text-xs text-slate-400"><ArrowLeft className="w-4 h-4" /><span>Back</span></button>
+                <div className={`${cardBase} overflow-hidden`}>
+                  {sel.image && <img src={sel.image} alt="" className="w-full object-cover" style={{ aspectRatio: '667/340' }} />}
+                  <div className="p-4 space-y-3">
+                    {(sel.icon || sel.title) && (
+                      <div className="flex items-center space-x-2.5">
+                        {sel.icon && <img src={sel.icon} alt="" className="w-10 h-10 rounded-xl object-cover flex-shrink-0" />}
+                        {sel.title && <h2 className="text-base font-black break-words min-w-0">{sel.title}</h2>}
+                      </div>
+                    )}
+                    {sel.description && <p className="text-xs text-slate-300 whitespace-pre-line break-words leading-relaxed">{sel.description}</p>}
+                    {(sel.videoUrl || sel.youtubeUrl) && (
+                      <div className="space-y-2">
+                        {sel.videoUrl && <button onClick={() => openVideo(sel.title || 'Video', sel.videoUrl)} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">▶ ভিডিও দেখুন</button>}
+                        {sel.youtubeUrl && <button onClick={() => openVideo(sel.title || 'Video', sel.youtubeUrl)} className="w-full py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold">▶ YouTube ভিডিও দেখুন</button>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          // ---------- list: banner + icon + title + short description + button ----------
           return (
             <div className="p-4 space-y-4">
               {backBtn('menu')}
               <h2 className="text-lg font-black">UR FF Tour App All Rules</h2>
-              {items.length === 0 ? <p className="text-xs text-slate-500 text-center py-10">Ekhono kono rule nei.</p> : items.map(b => (
+              {all.length === 0 ? <p className="text-xs text-slate-500 text-center py-10">Ekhono kono rule nei.</p> : all.map(b => (
                 <div key={b.id} className={`${cardBase} overflow-hidden`}>
                   {b.image && <img src={b.image} alt="" className="w-full object-cover" style={{ aspectRatio: '667/340' }} />}
                   <div className="p-3 space-y-2.5">
@@ -6870,11 +6905,8 @@ ${buildUserContextBrief(uid)}`;
                         {b.title && <p className="text-sm font-black break-words min-w-0">{b.title}</p>}
                       </div>
                     )}
-                    {b.description && <p className="text-xs text-slate-400 whitespace-pre-line break-words">{b.description}</p>}
-                    {b.videoUrl && (_youtubeEmbed(b.videoUrl)
-                      ? <div className="bg-black rounded-xl overflow-hidden" style={{ aspectRatio: '16/9' }}><iframe src={_youtubeEmbed(b.videoUrl)} title="video" className="w-full h-full" allow="encrypted-media; picture-in-picture" allowFullScreen /></div>
-                      : <video src={b.videoUrl} controls playsInline preload="metadata" className="w-full rounded-xl bg-black" style={{ aspectRatio: '16/9' }} />)}
-                    {b.youtubeUrl && <button onClick={() => openExternal(b.youtubeUrl)} className="w-full py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold">▶ Watch on YouTube</button>}
+                    {shortOf(b) && <p className="text-xs text-slate-400 whitespace-pre-line break-words">{shortOf(b)}</p>}
+                    <button onClick={() => setUrtbvRuleId(b.id)} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">Click and See Rules</button>
                   </div>
                 </div>
               ))}
@@ -7109,7 +7141,7 @@ ${buildUserContextBrief(uid)}`;
             <button onClick={() => setUrtbvView('teams')} className={`${cardBase} w-full p-4 flex items-center justify-between`}>
               <span className="text-sm font-bold">{tr('Team & Player', 'টিম ও প্লেয়ার')}</span><ChevronRight className="w-4 h-4 text-slate-500" />
             </button>
-            <button onClick={() => setUrtbvView('rules')} className={`${cardBase} w-full p-4 flex items-center justify-between`}>
+            <button onClick={() => { setUrtbvRuleId(null); setUrtbvView('rules'); }} className={`${cardBase} w-full p-4 flex items-center justify-between`}>
               <span className="text-sm font-bold">UR FF Tour App All Rules</span><ChevronRight className="w-4 h-4 text-slate-500" />
             </button>
           </div>
