@@ -244,7 +244,7 @@ if (typeof document !== 'undefined') {
 
 import { getToken } from 'firebase/messaging';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { collection, doc, getDocs, setDoc, updateDoc, increment, deleteDoc, addDoc, onSnapshot, runTransaction, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, updateDoc, increment, deleteDoc, addDoc, onSnapshot, runTransaction, arrayUnion, arrayRemove, query, where } from 'firebase/firestore';
 // UR Auto Payment backend-er address (Vercel deploy er por ekhane apnar link boshan, shesh e / chhara)
 const AUTO_PAYMENT_URL = 'https://ur-auto-payment.vercel.app';
 // ---- Rules (Accordion) + Payment Type components (UR FF TOUR) ----
@@ -398,6 +398,395 @@ function PaymentTypesAdmin({ pm, onChange, onPickIcon, inputCls, darkMode }) {
           <textarea value={ty.instruction} onChange={(e) => setType(ty.key, { instruction: e.target.value })} rows={2} placeholder="Instruction (খালি রাখলে ডিফল্ট লেখা দেখাবে)" className={`w-full ${inputCls} border p-1.5 rounded-lg text-[11px]`} />
         </div>
       ))}
+    </div>
+  );
+}
+
+// ===================== Free Fire ID Buy & Sell (User) =====================
+const MK_DEFAULTS = {
+  ratePerThousand: 50, adminWhatsapp: '', terms: '', rules: [],
+  priceRanges: ['5000-10000', '10000-20000', '20000-50000', '50000-70000', '70000-100000', '100000-200000', '200000-'],
+};
+const MK_MIN_SHOTS = 15, MK_MAX_SHOTS = 20, MK_MIN_LEVEL = 55;
+const mkTk = (n) => '৳' + Number(n || 0).toLocaleString('en-US');
+const mkParseRange = (r) => { const [a, b] = String(r).split('-'); return [Number(a) || 0, b ? Number(b) : Infinity]; };
+const mkRangeLabel = (r) => { const [a, b] = mkParseRange(r); return b === Infinity ? `${mkTk(a)}+` : `${mkTk(a)} – ${mkTk(b)}`; };
+const mkStatusLabel = (o) => (o.refundStatus === 'refunded' ? 'Refunded' : ({ pending: 'Pending', confirmed: 'Confirmed', delivered: 'Delivered', completed: 'Completed', rejected: 'Rejected' }[o.status] || o.status));
+const mkStatusCls = (st) => ({
+  pending: 'bg-amber-500/20 text-amber-400', approved: 'bg-emerald-500/20 text-emerald-400', confirmed: 'bg-blue-500/20 text-blue-400',
+  delivered: 'bg-indigo-500/20 text-indigo-300', completed: 'bg-emerald-500/20 text-emerald-400', rejected: 'bg-red-500/20 text-red-400',
+  refunded: 'bg-slate-500/30 text-slate-300', sold: 'bg-slate-500/30 text-slate-300', cancelled: 'bg-slate-500/30 text-slate-300', reserved: 'bg-amber-500/20 text-amber-400',
+}[st] || 'bg-slate-500/20 text-slate-300');
+const mkThumb = (dataUrl, maxW = 360, q = 0.5) => new Promise((resolve, reject) => {
+  const img = new Image();
+  img.onload = () => {
+    const sc = Math.min(1, maxW / img.width);
+    const c = document.createElement('canvas'); c.width = img.width * sc; c.height = img.height * sc;
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    resolve(c.toDataURL('image/jpeg', q));
+  };
+  img.onerror = reject; img.src = dataUrl;
+});
+
+function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress, onBack }) {
+  const [screen, setScreen] = useState('home'); // home | create | orders | rules | details
+  const [backTo, setBackTo] = useState('home');
+  const [settings, setSettings] = useState(MK_DEFAULTS);
+  const [listings, setListings] = useState([]);
+  const [myPosts, setMyPosts] = useState([]);
+  const [myOrders, setMyOrders] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [selId, setSelId] = useState(null);
+  const [shots, setShots] = useState(null);
+  const [lightbox, setLightbox] = useState(null);
+  const [buying, setBuying] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [orderView, setOrderView] = useState(null);
+  const [contactOpen, setContactOpen] = useState(false);
+  const [search, setSearch] = useState(''); const [range, setRange] = useState('all');
+  const [minP, setMinP] = useState(''); const [maxP, setMaxP] = useState(''); const [sort, setSort] = useState('new');
+  const [form, setForm] = useState({ title: '', description: '', extra: '', level: '', ffUid: '', price: '', whatsapp: '', payMethod: 'bKash', payAccount: '' });
+  const [pics, setPics] = useState([]);
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    const u1 = onSnapshot(doc(db, 'appData', 'idMarket'), (sn) => setSettings({ ...MK_DEFAULTS, ...(sn.exists() ? sn.data() : {}) }), () => setSettings(MK_DEFAULTS));
+    const u2 = onSnapshot(query(collection(db, 'idListings'), where('status', 'in', ['approved', 'reserved', 'sold'])),
+      (sn) => { setListings(sn.docs.map(d => d.data())); setLoaded(true); }, (e) => { console.error(e); setLoaded(true); });
+    const u3 = onSnapshot(query(collection(db, 'idListings'), where('sellerUid', '==', user.uid)),
+      (sn) => setMyPosts(sn.docs.map(d => d.data()).sort((a, b) => b.createdAtMs - a.createdAtMs)), (e) => console.error(e));
+    const u4 = onSnapshot(query(collection(db, 'idOrders'), where('buyerUid', '==', user.uid)),
+      (sn) => setMyOrders(sn.docs.map(d => d.data()).sort((a, b) => b.createdAtMs - a.createdAtMs)), (e) => console.error(e));
+    return () => { u1(); u2(); u3(); u4(); };
+  }, [user.uid]);
+
+  const rate = Number(settings.ratePerThousand) || 0;
+  const calc = (price) => { const fee = Math.round((Number(price) / 1000) * rate * 100) / 100; return { fee, total: Math.round((Number(price) + fee) * 100) / 100 }; };
+  const sel = selId ? listings.find(l => l.id === selId) : null;
+  const balance = (Number(me.depositBalance) || 0) + (Number(me.winningBalance) || 0);
+  const hasPending = myPosts.some(p => p.status === 'pending');
+  const card = `${t.card} border ${t.border} rounded-2xl`;
+  const BASE = AUTO_PAYMENT_URL + '/api/v1/market';
+
+  useEffect(() => {
+    setShots(null);
+    if (screen !== 'details' || !selId) return;
+    getDocs(collection(db, 'idListings', selId, 'shots')).then(sn => setShots(sn.docs.map(d => d.data()).sort((a, b) => a.order - b.order).map(d => d.data))).catch(() => setShots([]));
+  }, [screen, selId]);
+
+  const goto = (sc, from) => { setBackTo(from || 'home'); setScreen(sc); };
+
+  const doBuy = async () => {
+    if (!buying || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`${BASE}/buy?appId=urff2`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: user.uid, password: me.password, listingId: buying.id }) });
+      const j = await res.json();
+      if (j.ok) { showToast(`অর্ডার হয়েছে! নম্বর: ${j.orderId}`); setBuying(null); setScreen('orders'); }
+      else showToast(j.message || 'অর্ডার করা যায়নি');
+    } catch { showToast('Network somossa, abar chesta korun'); }
+    setBusy(false);
+  };
+
+  const addPics = async (e) => {
+    const files = Array.from(e.target.files || []); e.target.value = '';
+    if (!files.length) return;
+    setUploading(true);
+    const out = [...pics];
+    for (const f of files) {
+      if (out.length >= MK_MAX_SHOTS) { showToast(`সর্বোচ্চ ${MK_MAX_SHOTS}টি স্ক্রিনশট`); break; }
+      if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { showToast('শুধু JPG/PNG/WEBP ছবি দিন'); continue; }
+      if (f.size > 10 * 1024 * 1024) { showToast('ছবি ১০MB-র বেশি, ছোট ছবি দিন'); continue; }
+      try {
+        let d = await compress(f, 900, 0.6);
+        if (d.length > 250000) d = await compress(f, 700, 0.5);
+        if (d.length > 250000) { showToast('একটা ছবি এখনো বেশি বড়, বাদ দেওয়া হলো'); continue; }
+        out.push(d);
+      } catch { showToast('ছবি লোড হয়নি'); }
+    }
+    setPics(out); setUploading(false);
+  };
+
+  const submitPost = async () => {
+    if (busy) return;
+    const lv = Math.floor(Number(form.level));
+    if (form.title.trim().length < 3) { showToast('আইডির টাইটেল দিন'); return; }
+    if (!(lv >= MK_MIN_LEVEL)) { showToast(`আইডির লেভেল কমপক্ষে ${MK_MIN_LEVEL} হতে হবে`); return; }
+    if (!/^\d{6,14}$/.test(form.ffUid.trim())) { showToast('Free Fire UID ঠিক নয় (শুধু সংখ্যা)'); return; }
+    if (!(Number(form.price) >= 1000)) { showToast('বিক্রয়মূল্য কমপক্ষে ১,০০০ টাকা'); return; }
+    if (!/^(\+?88)?01\d{9}$/.test(form.whatsapp.replace(/[\s-]/g, ''))) { showToast('WhatsApp নম্বর ঠিক নয়'); return; }
+    if (!/^(\+?88)?01\d{9,10}$/.test(form.payAccount.replace(/[\s-]/g, ''))) { showToast('পেমেন্ট অ্যাকাউন্ট নম্বর ঠিক নয়'); return; }
+    if (pics.length < MK_MIN_SHOTS) { showToast(`কমপক্ষে ${MK_MIN_SHOTS}টি স্ক্রিনশট দিন (এখন ${pics.length}টি)`); return; }
+    setBusy(true);
+    try {
+      const cover = await mkThumb(pics[0]);
+      const body = JSON.stringify({ uid: user.uid, password: me.password, post: { ...form, level: lv, price: Number(form.price), shots: pics, cover } });
+      if (body.length > 4200000) { showToast('ছবিগুলোর মোট সাইজ বেশি, কিছু ছবি কমান'); setBusy(false); return; }
+      const res = await fetch(`${BASE}/submit?appId=urff2`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+      const j = await res.json();
+      if (j.ok) {
+        showToast('পোস্ট জমা হয়েছে, অ্যাডমিনের যাচাইয়ের অপেক্ষায় (Pending)');
+        setForm({ title: '', description: '', extra: '', level: '', ffUid: '', price: '', whatsapp: '', payMethod: 'bKash', payAccount: '' }); setPics([]);
+      } else showToast(j.message || 'পোস্ট জমা হয়নি');
+    } catch { showToast('Network somossa, abar chesta korun'); }
+    setBusy(false);
+  };
+
+  const inp = `w-full ${t.input} border p-3 rounded-xl text-xs`;
+  const BackBtn = ({ to, label }) => (
+    <button type="button" onClick={() => (to ? setScreen(to) : onBack())} className="flex items-center space-x-1 text-xs text-slate-400"><ArrowLeft className="w-4 h-4" /><span>{label || 'Back'}</span></button>
+  );
+
+  // ---------- list filter / sort ----------
+  const [lo, hi] = range === 'all' ? [0, Infinity] : mkParseRange(range);
+  const cmin = minP ? Number(minP) : null, cmax = maxP ? Number(maxP) : null;
+  const shown = listings.filter(l =>
+    (!search.trim() || `${l.title} ${l.level}`.toLowerCase().includes(search.trim().toLowerCase())) &&
+    l.price >= lo && l.price <= hi && (cmin === null || l.price >= cmin) && (cmax === null || l.price <= cmax))
+    .sort((a, b) => (sort === 'low' ? a.price - b.price : sort === 'high' ? b.price - a.price : sort === 'level' ? b.level - a.level : b.createdAtMs - a.createdAtMs))
+    .sort((a, b) => (a.status === 'sold') - (b.status === 'sold'));
+
+  const FeeBox = ({ price }) => { const { fee, total } = calc(price); return (
+    <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-2.5 space-y-1 text-[11px]`}>
+      <div className="flex justify-between"><span className="text-slate-400">বিক্রয়মূল্য</span><b>{mkTk(price)}</b></div>
+      <div className="flex justify-between"><span className="text-slate-400">প্রতি ১,০০০ টাকায় অ্যাডমিন ফি</span><b>{mkTk(rate)}</b></div>
+      <div className="flex justify-between"><span className="text-slate-400">মোট অ্যাডমিন ফি</span><b>{mkTk(fee)}</b></div>
+      <div className="flex justify-between border-t border-slate-700/40 pt-1"><span className="font-bold">মোট ক্রয়মূল্য</span><b className="text-emerald-400">{mkTk(total)}</b></div>
+    </div>); };
+
+  const BuyBtn = ({ l }) => (
+    <button type="button" disabled={l.status !== 'approved' || l.sellerUid === user.uid} onClick={() => setBuying(l)}
+      className="disabled:opacity-40 flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold">
+      {l.status === 'sold' ? 'Sold' : l.status === 'reserved' ? 'Reserved' : l.sellerUid === user.uid ? 'আপনার আইডি' : 'Buy Now'}
+    </button>);
+
+  const wa = (settings.adminWhatsapp || '').replace(/[^\d]/g, '');
+  const waLink = wa ? `https://wa.me/${wa.startsWith('01') ? '88' + wa : wa}` : '';
+
+  return (
+    <div className="p-4 space-y-4">
+      {screen === 'home' && <BackBtn />}
+      {screen !== 'home' && <BackBtn to={screen === 'rules' ? backTo : 'home'} />}
+      <h2 className="text-lg font-black">Free Fire ID Buy & Sell</h2>
+
+      {screen === 'home' && (<>
+        <div className="grid grid-cols-3 gap-2">
+          <button type="button" onClick={() => goto('create')} className="py-3 px-1 bg-indigo-600 text-white rounded-xl text-[11px] font-bold leading-tight">Create Your ID Sell Post</button>
+          <button type="button" onClick={() => goto('orders')} className={`py-3 px-1 ${t.card} border ${t.border} rounded-xl text-[11px] font-bold`}>My Orders{myOrders.length ? ` (${myOrders.length})` : ''}</button>
+          <button type="button" onClick={() => goto('rules', 'home')} className={`py-3 px-1 ${t.card} border ${t.border} rounded-xl text-[11px] font-bold`}>Rules</button>
+        </div>
+
+        <div className={`${card} p-3 space-y-2`}>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="টাইটেল বা লেভেল দিয়ে খুঁজুন" className={inp} />
+          <div className="flex space-x-1.5 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+            {['all', ...settings.priceRanges].map(r => (
+              <button key={r} type="button" onClick={() => setRange(r)} className={`flex-shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold ${range === r ? 'bg-indigo-600 text-white' : (darkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-700')}`}>{r === 'all' ? 'All Prices' : mkRangeLabel(r)}</button>
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <input value={minP} onChange={(e) => setMinP(e.target.value.replace(/\D/g, ''))} placeholder="সর্বনিম্ন ৳" inputMode="numeric" className={inp} />
+            <input value={maxP} onChange={(e) => setMaxP(e.target.value.replace(/\D/g, ''))} placeholder="সর্বোচ্চ ৳" inputMode="numeric" className={inp} />
+            <select value={sort} onChange={(e) => setSort(e.target.value)} className={inp}>
+              <option value="new">নতুন আগে</option><option value="low">কম দাম আগে</option><option value="high">বেশি দাম আগে</option><option value="level">লেভেল (বেশি আগে)</option>
+            </select>
+          </div>
+        </div>
+
+        {!loaded && <p className="text-xs text-slate-500 text-center py-8">লোড হচ্ছে…</p>}
+        {loaded && shown.length === 0 && <p className="text-xs text-slate-500 text-center py-8">এখন কোনো আইডি পাওয়া যায়নি।</p>}
+        {shown.map(l => (
+          <div key={l.id} className={`${card} overflow-hidden`}>
+            <div className="relative">
+              <img src={l.cover} alt="" onClick={() => setLightbox(l.cover)} className="w-full object-cover cursor-pointer" style={{ aspectRatio: '16/9' }} />
+              {l.status !== 'approved' && <div className="absolute inset-0 bg-black/60 flex items-center justify-center pointer-events-none"><span className="px-3 py-1 rounded-full bg-red-600 text-white text-xs font-black tracking-widest">{l.status === 'sold' ? 'SOLD' : 'RESERVED'}</span></div>}
+              <span className="absolute top-2 left-2 px-2 py-1 rounded-lg bg-black/70 text-white text-[10px] font-black">Level {l.level}</span>
+            </div>
+            <div className="p-3 space-y-2.5">
+              <p className="text-sm font-black break-words">{l.title}</p>
+              <FeeBox price={l.price} />
+              <div className="flex space-x-2">
+                <BuyBtn l={l} />
+                <button type="button" onClick={() => { setSelId(l.id); goto('details', 'home'); setBackTo('home'); setScreen('details'); }} className={`flex-1 py-2.5 ${t.card} border ${t.border} rounded-xl text-xs font-bold`}>Details</button>
+                <button type="button" onClick={() => goto('rules', 'home')} className={`flex-1 py-2.5 ${t.card} border ${t.border} rounded-xl text-xs font-bold`}>Rules</button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </>)}
+
+      {screen === 'details' && (!sel ? <p className="text-xs text-slate-500 text-center py-8">আইডিটি পাওয়া যায়নি।</p> : (
+        <div className="space-y-3">
+          <div className={`${card} overflow-hidden`}>
+            <img src={sel.cover} alt="" onClick={() => setLightbox(sel.cover)} className="w-full object-cover cursor-pointer" style={{ aspectRatio: '16/9' }} />
+            <div className="p-3 space-y-2.5">
+              <div className="flex items-start justify-between space-x-2"><p className="text-sm font-black break-words">{sel.title}</p><span className="px-2 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 text-[10px] font-black flex-shrink-0">Level {sel.level}</span></div>
+              {sel.status !== 'approved' && <span className={`inline-block px-2 py-1 rounded-lg text-[10px] font-black ${mkStatusCls(sel.status)}`}>{sel.status === 'sold' ? 'SOLD' : 'RESERVED'}</span>}
+              <FeeBox price={sel.price} />
+              {sel.description && <p className="text-xs text-slate-300 whitespace-pre-line break-words leading-relaxed">{sel.description}</p>}
+              {sel.extra && <p className="text-xs text-slate-400 whitespace-pre-line break-words leading-relaxed">{sel.extra}</p>}
+              {settings.terms && <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-2.5 text-[11px] text-slate-400 whitespace-pre-line break-words`}><b className="text-slate-300">শর্তাবলি</b>{'\n'}{settings.terms}</div>}
+              <p className="text-[10px] text-slate-500">আইডির Free Fire UID এবং বিক্রেতার যোগাযোগের তথ্য গোপন থাকে। লেনদেন ও যোগাযোগ অ্যাডমিনের মাধ্যমে হয়।</p>
+              <div className="flex space-x-2"><BuyBtn l={sel} />
+                <button type="button" onClick={() => goto('rules', 'details')} className={`flex-1 py-2.5 ${t.card} border ${t.border} rounded-xl text-xs font-bold`}>Rules</button></div>
+            </div>
+          </div>
+          <p className="text-xs font-bold">স্ক্রিনশট গ্যালারি{shots ? ` (${shots.length})` : ''}</p>
+          {!shots ? <p className="text-xs text-slate-500">লোড হচ্ছে…</p> : (
+            <div className="grid grid-cols-3 gap-2">{shots.map((d, i) => <img key={i} src={d} alt="" onClick={() => setLightbox(d)} className="w-full object-cover rounded-xl cursor-pointer" style={{ aspectRatio: '9/16' }} />)}</div>
+          )}
+        </div>
+      ))}
+
+      {screen === 'rules' && (
+        <div className="space-y-3">
+          <p className="text-xs text-slate-400">আইডি কেনাবেচার নিয়মাবলি</p>
+          {settings.rules && settings.rules.length > 0
+            ? <RulesAccordion rules={settings.rules} darkMode={darkMode} flat />
+            : <p className="text-xs text-slate-500 text-center py-8">এখনো কোনো নিয়ম যোগ করা হয়নি।</p>}
+        </div>
+      )}
+
+      {screen === 'create' && (
+        <div className="space-y-3">
+          {myPosts.length > 0 && (
+            <div className={`${card} p-3 space-y-2`}>
+              <p className="text-xs font-bold">আমার সেল পোস্ট</p>
+              {myPosts.map(p => (
+                <div key={p.id} className="flex items-start justify-between space-x-2">
+                  <div className="min-w-0"><p className="text-xs font-semibold truncate">{p.title}</p>
+                    {p.status === 'rejected' && p.rejectReason && <p className="text-[10px] text-red-400 break-words">কারণ: {p.rejectReason}</p>}</div>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black flex-shrink-0 ${mkStatusCls(p.status)}`}>{p.status === 'reserved' ? 'Approved' : p.status.charAt(0).toUpperCase() + p.status.slice(1)}</span>
+                </div>))}
+            </div>
+          )}
+          {hasPending && <div className="rounded-xl p-3 text-xs text-amber-400 bg-amber-500/10">আপনার একটি পোস্ট ইতিমধ্যে যাচাইয়ে (Pending) আছে। অ্যাডমিন Approve বা Reject করার পর নতুন পোস্ট করতে পারবেন।</div>}
+          <div className={`${card} p-3 space-y-2.5 ${hasPending ? 'opacity-50 pointer-events-none' : ''}`}>
+            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="আইডির টাইটেল" className={inp} />
+            <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="আইডির বিস্তারিত বিবরণ" rows={4} className={inp} />
+            <textarea value={form.extra} onChange={(e) => setForm({ ...form, extra: e.target.value })} placeholder="অতিরিক্ত তথ্য (গুরুত্বপূর্ণ ফিচার, কীভাবে সংগ্রহ করা)" rows={3} className={inp} />
+            <div className="grid grid-cols-2 gap-2">
+              <div><input value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value.replace(/\D/g, '') })} placeholder={`লেভেল (কমপক্ষে ${MK_MIN_LEVEL})`} inputMode="numeric" className={inp} />
+                {form.level && Number(form.level) < MK_MIN_LEVEL && <p className="text-[10px] text-red-400 mt-1">লেভেল কমপক্ষে {MK_MIN_LEVEL} হতে হবে</p>}</div>
+              <input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value.replace(/[^\d.]/g, '') })} placeholder="বিক্রয়মূল্য (৳)" inputMode="decimal" className={inp} />
+            </div>
+            {Number(form.price) >= 1000 && <FeeBox price={Number(form.price)} />}
+            <input value={form.ffUid} onChange={(e) => setForm({ ...form, ffUid: e.target.value.replace(/\D/g, '') })} placeholder="Free Fire UID" inputMode="numeric" className={inp} />
+            <p className="text-[10px] text-slate-500">নিচের তথ্যগুলো শুধু অ্যাডমিন দেখবে, ক্রেতারা দেখবে না।</p>
+            <input value={form.whatsapp} onChange={(e) => setForm({ ...form, whatsapp: e.target.value })} placeholder="আপনার WhatsApp নম্বর" inputMode="tel" className={inp} />
+            <div className="grid grid-cols-3 gap-2">{['bKash', 'Nagad', 'Rocket'].map(m => (
+              <button key={m} type="button" onClick={() => setForm({ ...form, payMethod: m })} className={`py-2.5 rounded-xl text-xs font-bold ${form.payMethod === m ? 'bg-indigo-600 text-white' : `${t.card} border ${t.border}`}`}>{m}</button>))}</div>
+            <input value={form.payAccount} onChange={(e) => setForm({ ...form, payAccount: e.target.value })} placeholder={`${form.payMethod} অ্যাকাউন্ট নম্বর (টাকা পাবেন যেখানে)`} inputMode="tel" className={inp} />
+
+            <p className="text-xs font-bold">স্ক্রিনশট ({pics.length}/{MK_MIN_SHOTS} ন্যূনতম, সর্বোচ্চ {MK_MAX_SHOTS})</p>
+            <label className={`block text-center py-3 border border-dashed ${t.border} rounded-xl text-xs font-bold cursor-pointer ${pics.length >= MK_MAX_SHOTS ? 'opacity-40' : ''}`}>
+              {uploading ? 'ছবি প্রস্তুত হচ্ছে…' : '+ স্ক্রিনশট যোগ করুন (JPG/PNG/WEBP)'}
+              <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" disabled={uploading || pics.length >= MK_MAX_SHOTS} onChange={addPics} />
+            </label>
+            <p className="text-[10px] text-slate-500">প্রথম ছবিটি কার্ডের কভার হবে। ছবি নিজে থেকে ছোট করে নেওয়া হয়।</p>
+            <div className="grid grid-cols-4 gap-1.5">
+              {pics.map((d, i) => (
+                <div key={i} className="relative">
+                  <img src={d} alt="" className="w-full object-cover rounded-lg" style={{ aspectRatio: '1/1' }} />
+                  {i === 0 ? <span className="absolute bottom-0 left-0 right-0 text-center text-[8px] font-black bg-indigo-600 text-white rounded-b-lg">COVER</span>
+                    : <button type="button" onClick={() => setPics([d, ...pics.filter((_, k) => k !== i)])} className="absolute bottom-0 left-0 right-0 text-center text-[8px] font-bold bg-black/70 text-white rounded-b-lg">কভার</button>}
+                  <button type="button" onClick={() => setPics(pics.filter((_, k) => k !== i))} className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-red-600 text-white text-[10px] font-black">✕</button>
+                </div>))}
+            </div>
+            <button type="button" onClick={submitPost} disabled={busy || uploading || hasPending} className="disabled:opacity-50 w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">{busy ? 'জমা হচ্ছে…' : 'SUBMIT SELL POST'}</button>
+          </div>
+        </div>
+      )}
+
+      {screen === 'orders' && (
+        <div className="space-y-3">
+          {myOrders.length === 0 && <p className="text-xs text-slate-500 text-center py-8">আপনার কোনো অর্ডার নেই।</p>}
+          {myOrders.map(o => (
+            <div key={o.id} className={`${card} p-3 space-y-2`}>
+              <div className="flex space-x-3">
+                <img src={o.cover} alt="" className="w-20 h-20 object-cover rounded-xl flex-shrink-0" />
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <p className="text-xs font-black break-words">{o.title}</p>
+                  <p className="text-[10px] text-slate-400 break-all">{o.id}</p>
+                  <p className="text-[10px] text-slate-400">দাম {mkTk(o.price)} + ফি {mkTk(o.adminFee)}</p>
+                  <p className="text-xs font-bold text-emerald-400">মোট {mkTk(o.total)}</p>
+                  <p className="text-[10px] text-slate-500">{new Date(o.createdAtMs).toLocaleString('en-GB')}</p>
+                </div>
+                <span className={`self-start px-2 py-1 rounded-full text-[10px] font-black flex-shrink-0 ${mkStatusCls(o.refundStatus === 'refunded' ? 'refunded' : o.status)}`}>{mkStatusLabel(o)}</span>
+              </div>
+              <div className="flex space-x-2">
+                <button type="button" onClick={() => setOrderView(o)} className={`flex-1 py-2 ${t.card} border ${t.border} rounded-xl text-xs font-bold`}>Details</button>
+                <button type="button" onClick={() => setContactOpen(true)} className="flex-1 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold">Admin Contact</button>
+              </div>
+            </div>))}
+        </div>
+      )}
+
+      {/* ---- Buy confirm ---- */}
+      {buying && (
+        <div className="fixed inset-0 z-[75] bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => !busy && setBuying(null)}>
+          <div className={`${t.card} w-full max-w-sm rounded-2xl border ${t.border} p-5 space-y-3`} onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-sm">অর্ডার নিশ্চিত করুন</h3>
+            <p className="text-xs font-semibold break-words">{buying.title} <span className="text-slate-400">• Level {buying.level}</span></p>
+            <FeeBox price={buying.price} />
+            <div className="flex justify-between text-xs"><span className="text-slate-400">আপনার ব্যালেন্স</span><b>{mkTk(balance)}</b></div>
+            {balance < calc(buying.price).total && <p className="text-[11px] text-red-400">ব্যালেন্স যথেষ্ট নয়। আগে Add Money করুন।</p>}
+            <p className="text-[10px] text-slate-500">সম্মতি দিলে মোট টাকা আপনার ব্যালেন্স থেকে কেটে রাখা হবে। অ্যাডমিন Reject করলে পুরো টাকা ফেরত পাবেন।</p>
+            <div className="flex space-x-2">
+              <button type="button" disabled={busy} onClick={() => setBuying(null)} className={`flex-1 py-3 ${t.card} border ${t.border} rounded-xl text-xs font-bold`}>বাতিল</button>
+              <button type="button" disabled={busy || balance < calc(buying.price).total} onClick={doBuy} className="disabled:opacity-50 flex-1 py-3 bg-emerald-600 text-white rounded-xl text-xs font-bold">{busy ? 'হচ্ছে…' : 'সম্মত, Buy Now'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Order details ---- */}
+      {orderView && (
+        <div className="fixed inset-0 z-[75] bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setOrderView(null)}>
+          <div className={`${t.card} w-full max-w-sm rounded-2xl border ${t.border} p-5 space-y-2 max-h-[90vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between"><h3 className="font-bold text-sm">অর্ডার বিস্তারিত</h3><span className={`px-2 py-1 rounded-full text-[10px] font-black ${mkStatusCls(orderView.refundStatus === 'refunded' ? 'refunded' : orderView.status)}`}>{mkStatusLabel(orderView)}</span></div>
+            <img src={orderView.cover} alt="" className="w-full object-cover rounded-xl" style={{ aspectRatio: '16/9' }} />
+            <p className="text-sm font-black break-words">{orderView.title}</p>
+            <div className="text-[11px] space-y-1">
+              <div className="flex justify-between"><span className="text-slate-400">অর্ডার নম্বর</span><b className="break-all text-right ml-2">{orderView.id}</b></div>
+              <div className="flex justify-between"><span className="text-slate-400">আইডির দাম</span><b>{mkTk(orderView.price)}</b></div>
+              <div className="flex justify-between"><span className="text-slate-400">অ্যাডমিন ফি ({orderView.ratePerThousand}/হাজার)</span><b>{mkTk(orderView.adminFee)}</b></div>
+              <div className="flex justify-between border-t border-slate-700/40 pt-1"><span className="font-bold">মোট</span><b className="text-emerald-400">{mkTk(orderView.total)}</b></div>
+              <div className="flex justify-between"><span className="text-slate-400">তারিখ</span><b>{new Date(orderView.createdAtMs).toLocaleString('en-GB')}</b></div>
+              {orderView.rejectReason && <p className="text-red-400 break-words">কারণ: {orderView.rejectReason}</p>}
+              {orderView.refundStatus === 'refunded' && <p className="text-emerald-400">{mkTk(orderView.total)} আপনার ওয়ালেটে ফেরত দেওয়া হয়েছে।</p>}
+            </div>
+            <div className="flex space-x-2 pt-1">
+              <button type="button" onClick={() => setContactOpen(true)} className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold">Admin Contact</button>
+              <button type="button" onClick={() => setOrderView(null)} className={`flex-1 py-2.5 ${t.card} border ${t.border} rounded-xl text-xs font-bold`}>বন্ধ করুন</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Admin contact ---- */}
+      {contactOpen && (
+        <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4" onClick={() => setContactOpen(false)}>
+          <div className={`${t.card} w-full max-w-sm rounded-2xl border ${t.border} p-5 space-y-3`} onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-sm">Admin Contact</h3>
+            {wa ? (<>
+              <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 flex items-center justify-between`}>
+                <div><p className="text-[10px] text-slate-500">অ্যাডমিনের WhatsApp</p><p className="font-mono font-bold text-indigo-400">{settings.adminWhatsapp}</p></div>
+                <button type="button" onClick={() => copyToClipboard(settings.adminWhatsapp, 'Number')} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-[11px] font-bold">Copy</button>
+              </div>
+              <a href={waLink} target="_blank" rel="noopener noreferrer" className="block text-center py-3 bg-emerald-600 text-white rounded-xl text-xs font-bold">WhatsApp-এ যোগাযোগ করুন</a>
+            </>) : <p className="text-xs text-slate-400">অ্যাডমিন এখনো যোগাযোগের নম্বর সেট করেননি।</p>}
+            <button type="button" onClick={() => setContactOpen(false)} className={`w-full py-2.5 ${t.card} border ${t.border} rounded-xl text-xs font-bold`}>বন্ধ করুন</button>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Screenshot lightbox ---- */}
+      {lightbox && (
+        <div className="fixed inset-0 z-[90] bg-black/95 flex items-center justify-center p-2" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="" className="max-w-full max-h-full object-contain" />
+          <button type="button" className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/20 text-white font-black">✕</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -6857,6 +7246,12 @@ ${buildUserContextBrief(uid)}`;
           );
         }
 
+        if (urtbvView === 'idmarket') {
+          if (!user) return <p className="p-6 text-xs text-slate-500 text-center">লগইন করে ব্যবহার করুন।</p>;
+          const meNow = registeredUsers.find(u => u.uid === user.uid) || user;
+          return <IdMarket user={user} me={meNow} darkMode={darkMode} t={t} showToast={showToast} copyToClipboard={copyToClipboard} compress={compressImage} onBack={() => setUrtbvView('menu')} />;
+        }
+
         if (urtbvView === 'rules') {
           const all = [...(urtbv.rules || [])].filter(b => b.enabled !== false).sort((a, b) => (Number(a.order) || 999) - (Number(b.order) || 999));
           const sel = urtbvRuleId ? all.find(b => b.id === urtbvRuleId) : null;
@@ -7143,6 +7538,9 @@ ${buildUserContextBrief(uid)}`;
             </button>
             <button onClick={() => { setUrtbvRuleId(null); setUrtbvView('rules'); }} className={`${cardBase} w-full p-4 flex items-center justify-between`}>
               <span className="text-sm font-bold">UR FF Tour App All Rules</span><ChevronRight className="w-4 h-4 text-slate-500" />
+            </button>
+            <button onClick={() => setUrtbvView('idmarket')} className={`${cardBase} w-full p-4 flex items-center justify-between`}>
+              <span className="text-sm font-bold">Free Fire ID Buy & Sell</span><ChevronRight className="w-4 h-4 text-slate-500" />
             </button>
           </div>
         );
