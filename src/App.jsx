@@ -404,25 +404,73 @@ function PaymentTypesAdmin({ pm, onChange, onPickIcon, inputCls, darkMode }) {
 
 // ===================== Free Fire ID Buy & Sell (User) =====================
 const MK_DEFAULTS = {
-  ratePerThousand: 50, adminWhatsapp: '', terms: '', rules: [],
+  ratePerThousand: 50, adminWhatsapp: '', terms: '', rules: [], contactLinks: [],
   priceRanges: ['5000-10000', '10000-20000', '20000-50000', '50000-70000', '70000-100000', '100000-200000', '200000-'],
 };
 const MK_MIN_SHOTS = 15, MK_MAX_SHOTS = 20, MK_MIN_LEVEL = 55;
 const mkTk = (n) => '৳' + Number(n || 0).toLocaleString('en-US');
 const mkParseRange = (r) => { const [a, b] = String(r).split('-'); return [Number(a) || 0, b ? Number(b) : Infinity]; };
 const mkRangeLabel = (r) => { const [a, b] = mkParseRange(r); return b === Infinity ? `${mkTk(a)}+` : `${mkTk(a)} – ${mkTk(b)}`; };
-const mkStatusLabel = (o) => (o.refundStatus === 'refunded' ? 'Refunded' : ({ pending: 'Pending', confirmed: 'Confirmed', delivered: 'Delivered', completed: 'Completed', rejected: 'Rejected' }[o.status] || o.status));
+const mkStatusLabel = (o) => (({ pending: 'Pending', confirmed: 'Payment Verified', delivered: 'Processing', completed: 'Completed', rejected: 'Cancelled' }[o.status] || o.status) + (o.refundStatus === 'refunded' ? ' • Refunded' : ''));
+const mkPostLabel = (st) => ({ uploading: 'Uploading', pending: 'Pending', approved: 'Approved', reserved: 'Approved (Order চলছে)', rejected: 'Rejected', sold: 'Sold', cancelled: 'Cancelled' }[st] || st);
 const mkStatusCls = (st) => ({
   pending: 'bg-amber-500/20 text-amber-400', approved: 'bg-emerald-500/20 text-emerald-400', confirmed: 'bg-blue-500/20 text-blue-400',
   delivered: 'bg-indigo-500/20 text-indigo-300', completed: 'bg-emerald-500/20 text-emerald-400', rejected: 'bg-red-500/20 text-red-400',
   refunded: 'bg-slate-500/30 text-slate-300', sold: 'bg-slate-500/30 text-slate-300', cancelled: 'bg-slate-500/30 text-slate-300', reserved: 'bg-amber-500/20 text-amber-400',
 }[st] || 'bg-slate-500/20 text-slate-300');
-const mkThumb = (dataUrl, maxW = 360, q = 0.5) => new Promise((resolve, reject) => {
+// Screenshot ke JPEG kora: transparent/PNG-te kalo hoye jaoya thekano (shada background), ar kalo output dhora porle error
+async function mkLoadSource(file, viaImg) {
+  if (!viaImg && typeof createImageBitmap === 'function') {
+    try { return await createImageBitmap(file); } catch (e) { /* Image diye cheshta */ }
+  }
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('LOAD')); };
+    img.src = url;
+  });
+}
+function mkIsBlank(ctx, w, h) {
+  let sum = 0, n = 0;
+  for (let i = 1; i <= 12; i++) for (let j = 1; j <= 12; j++) {
+    const d = ctx.getImageData(Math.floor((w * i) / 13), Math.floor((h * j) / 13), 1, 1).data;
+    sum += d[0] + d[1] + d[2]; n++;
+  }
+  return sum / n < 6;
+}
+async function mkCompressOnce(file, maxW, q, viaImg) {
+  const src = await mkLoadSource(file, viaImg);
+  const sw = src.width, sh = src.height;
+  if (!sw || !sh) throw new Error('EMPTY');
+  const sc = Math.min(1, maxW / sw);
+  const w = Math.max(1, Math.round(sw * sc)), h = Math.max(1, Math.round(sh * sc));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(src, 0, 0, w, h);
+  if (src.close) src.close();
+  if (mkIsBlank(ctx, w, h)) throw new Error('BLANK');
+  return c.toDataURL('image/jpeg', q);
+}
+async function mkCompress(file, maxW, q) {
+  try { return await mkCompressOnce(file, maxW, q, false); }
+  catch (e1) { return await mkCompressOnce(file, maxW, q, true); }
+}
+// Cover: 16:9 kore (card-e jemon dekhay) kete chhoto kora, jate bhari na hoy
+const mkThumb = (dataUrl, outW = 720, q = 0.78) => new Promise((resolve, reject) => {
   const img = new Image();
   img.onload = () => {
-    const sc = Math.min(1, maxW / img.width);
-    const c = document.createElement('canvas'); c.width = img.width * sc; c.height = img.height * sc;
-    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const outH = Math.round((outW * 9) / 16);
+    const c = document.createElement('canvas'); c.width = outW; c.height = outH;
+    const ctx = c.getContext('2d'); ctx.imageSmoothingQuality = 'high';
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, outW, outH);
+    const targetRatio = 16 / 9, srcRatio = img.width / img.height;
+    let sw = img.width, sh = img.height, sx = 0, sy = 0;
+    if (srcRatio < targetRatio) { sh = img.width / targetRatio; sy = (img.height - sh) / 2; }
+    else { sw = img.height * targetRatio; sx = (img.width - sw) / 2; }
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
     resolve(c.toDataURL('image/jpeg', q));
   };
   img.onerror = reject; img.src = dataUrl;
@@ -448,6 +496,12 @@ function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress,
   const [form, setForm] = useState({ title: '', description: '', extra: '', level: '', ffUid: '', price: '', whatsapp: '', payMethod: 'bKash', payAccount: '' });
   const [pics, setPics] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [createTab, setCreateTab] = useState('new'); // new | mine
+  const [mineSel, setMineSel] = useState(null);
+  const [mineShots, setMineShots] = useState(null);
+  const [sellerOrders, setSellerOrders] = useState([]);
+  const [resumeId, setResumeId] = useState(null);
+  const [prog, setProg] = useState(null);
 
   useEffect(() => {
     const u1 = onSnapshot(doc(db, 'appData', 'idMarket'), (sn) => setSettings({ ...MK_DEFAULTS, ...(sn.exists() ? sn.data() : {}) }), () => setSettings(MK_DEFAULTS));
@@ -457,7 +511,9 @@ function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress,
       (sn) => setMyPosts(sn.docs.map(d => d.data()).sort((a, b) => b.createdAtMs - a.createdAtMs)), (e) => console.error(e));
     const u4 = onSnapshot(query(collection(db, 'idOrders'), where('buyerUid', '==', user.uid)),
       (sn) => setMyOrders(sn.docs.map(d => d.data()).sort((a, b) => b.createdAtMs - a.createdAtMs)), (e) => console.error(e));
-    return () => { u1(); u2(); u3(); u4(); };
+    const u5 = onSnapshot(query(collection(db, 'idOrders'), where('sellerUid', '==', user.uid)),
+      (sn) => setSellerOrders(sn.docs.map(d => d.data()).sort((a, b) => b.createdAtMs - a.createdAtMs)), (e) => console.error(e));
+    return () => { u1(); u2(); u3(); u4(); u5(); };
   }, [user.uid]);
 
   const rate = Number(settings.ratePerThousand) || 0;
@@ -473,6 +529,12 @@ function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress,
     if (screen !== 'details' || !selId) return;
     getDocs(collection(db, 'idListings', selId, 'shots')).then(sn => setShots(sn.docs.map(d => d.data()).sort((a, b) => a.order - b.order).map(d => d.data))).catch(() => setShots([]));
   }, [screen, selId]);
+
+  useEffect(() => {
+    setMineShots(null);
+    if (!mineSel) return;
+    getDocs(collection(db, 'idListings', mineSel, 'shots')).then(sn => setMineShots(sn.docs.map(d => d.data()).sort((a, b) => a.order - b.order).map(d => d.data))).catch(() => setMineShots([]));
+  }, [mineSel]);
 
   const goto = (sc, from) => { setBackTo(from || 'home'); setScreen(sc); };
 
@@ -493,18 +555,32 @@ function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress,
     if (!files.length) return;
     setUploading(true);
     const out = [...pics];
+    let blanks = 0;
     for (const f of files) {
       if (out.length >= MK_MAX_SHOTS) { showToast(`সর্বোচ্চ ${MK_MAX_SHOTS}টি স্ক্রিনশট`); break; }
       if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { showToast('শুধু JPG/PNG/WEBP ছবি দিন'); continue; }
-      if (f.size > 10 * 1024 * 1024) { showToast('ছবি ১০MB-র বেশি, ছোট ছবি দিন'); continue; }
+      if (f.size > 15 * 1024 * 1024) { showToast('ছবি ১৫MB-র বেশি, ছোট ছবি দিন'); continue; }
       try {
-        let d = await compress(f, 900, 0.6);
-        if (d.length > 250000) d = await compress(f, 700, 0.5);
-        if (d.length > 250000) { showToast('একটা ছবি এখনো বেশি বড়, বাদ দেওয়া হলো'); continue; }
+        let d = null;
+        for (const [w, q] of [[1280, 0.8], [1100, 0.74], [900, 0.66], [760, 0.58]]) {
+          d = await mkCompress(f, w, q);
+          if (d.length <= 370000) break;
+        }
+        if (d.length > 370000) { showToast('একটা ছবি এখনো বেশি বড়, বাদ দেওয়া হলো'); continue; }
         out.push(d);
-      } catch { showToast('ছবি লোড হয়নি'); }
+      } catch (err) {
+        if (String(err && err.message) === 'BLANK') blanks++; else showToast('ছবি লোড হয়নি');
+      }
     }
+    if (blanks) showToast(`${blanks}টি ছবি কালো দেখাচ্ছে (ফোনের স্ক্রিনশট ফাইল খারাপ হতে পারে), সেগুলো বাদ দেওয়া হয়েছে। ছবিটা আবার তুলে দিন।`);
     setPics(out); setUploading(false);
+  };
+
+  const call = async (path, payload) => {
+    try {
+      const res = await fetch(`${BASE}/${path}?appId=urff2`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: user.uid, password: me.password, ...payload }) });
+      return await res.json();
+    } catch { return { ok: false, message: 'Network somossa, abar chesta korun' }; }
   };
 
   const submitPost = async () => {
@@ -519,17 +595,27 @@ function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress,
     if (pics.length < MK_MIN_SHOTS) { showToast(`কমপক্ষে ${MK_MIN_SHOTS}টি স্ক্রিনশট দিন (এখন ${pics.length}টি)`); return; }
     setBusy(true);
     try {
-      const cover = await mkThumb(pics[0]);
-      const body = JSON.stringify({ uid: user.uid, password: me.password, post: { ...form, level: lv, price: Number(form.price), shots: pics, cover } });
-      if (body.length > 4200000) { showToast('ছবিগুলোর মোট সাইজ বেশি, কিছু ছবি কমান'); setBusy(false); return; }
-      const res = await fetch(`${BASE}/submit?appId=urff2`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-      const j = await res.json();
-      if (j.ok) {
-        showToast('পোস্ট জমা হয়েছে, অ্যাডমিনের যাচাইয়ের অপেক্ষায় (Pending)');
-        setForm({ title: '', description: '', extra: '', level: '', ffUid: '', price: '', whatsapp: '', payMethod: 'bKash', payAccount: '' }); setPics([]);
-      } else showToast(j.message || 'পোস্ট জমা হয়নি');
-    } catch { showToast('Network somossa, abar chesta korun'); }
-    setBusy(false);
+      let id = resumeId;
+      if (!id) {
+        setProg({ done: 0, total: pics.length, step: 'পোস্ট তৈরি হচ্ছে…' });
+        const cover = await mkThumb(pics[0]);
+        const r1 = await call('submit', { post: { ...form, level: lv, price: Number(form.price), shotCount: pics.length, cover } });
+        if (!r1.ok) { showToast(r1.message || 'পোস্ট জমা হয়নি'); setBusy(false); setProg(null); return; }
+        id = r1.id; setResumeId(id);
+      }
+      for (let i = 0; i < pics.length; i++) {
+        let r = null;
+        for (let a = 0; a < 3; a++) { r = await call('shot', { listingId: id, index: i, data: pics[i] }); if (r.ok) break; }
+        if (!r.ok) { showToast((r.message || 'ছবি আপলোড হয়নি') + ' — আবার SUBMIT চাপলে বাকিটা চালু হবে'); setBusy(false); setProg(null); return; }
+        setProg({ done: i + 1, total: pics.length, step: 'ছবি আপলোড' });
+      }
+      const r3 = await call('finalize', { listingId: id });
+      if (!r3.ok) { showToast((r3.message || 'জমা শেষ হয়নি') + ' — আবার SUBMIT চাপুন'); setBusy(false); setProg(null); return; }
+      showToast('পোস্ট জমা হয়েছে, অ্যাডমিনের যাচাইয়ের অপেক্ষায় (Pending)');
+      setForm({ title: '', description: '', extra: '', level: '', ffUid: '', price: '', whatsapp: '', payMethod: 'bKash', payAccount: '' }); setPics([]); setResumeId(null);
+      setCreateTab('mine');
+    } catch (err) { showToast('কিছু ভুল হয়েছে, আবার চেষ্টা করুন'); }
+    setBusy(false); setProg(null);
   };
 
   const inp = `w-full ${t.input} border p-3 rounded-xl text-xs`;
@@ -555,13 +641,31 @@ function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress,
     </div>); };
 
   const BuyBtn = ({ l }) => (
-    <button type="button" disabled={l.status !== 'approved' || l.sellerUid === user.uid} onClick={() => setBuying(l)}
+    <button type="button" disabled={l.status !== 'approved'} onClick={() => setBuying(l)}
       className="disabled:opacity-40 flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold">
-      {l.status === 'sold' ? 'Sold' : l.status === 'reserved' ? 'Reserved' : l.sellerUid === user.uid ? 'আপনার আইডি' : 'Buy Now'}
+      {l.status === 'sold' ? 'Sold' : l.status === 'reserved' ? 'Reserved' : 'Buy Now'}
     </button>);
 
   const wa = (settings.adminWhatsapp || '').replace(/[^\d]/g, '');
   const waLink = wa ? `https://wa.me/${wa.startsWith('01') ? '88' + wa : wa}` : '';
+  const cLinks = (settings.contactLinks || []).filter(k => k && /^(https?:\/\/|tg:\/\/)/i.test(k.url || ''));
+  const ContactBlock = () => (
+    <div className="space-y-2">
+      {wa ? (<>
+        <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 flex items-center justify-between`}>
+          <div><p className="text-[10px] text-slate-500">অ্যাডমিনের যোগাযোগ নম্বর</p><p className="font-mono font-bold text-indigo-400">{settings.adminWhatsapp}</p></div>
+          <button type="button" onClick={() => copyToClipboard(settings.adminWhatsapp, 'Number')} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-[11px] font-bold">Copy</button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <a href={`tel:${settings.adminWhatsapp}`} className="block text-center py-2.5 bg-slate-600 text-white rounded-xl text-xs font-bold">📞 কল করুন</a>
+          <a href={waLink} target="_blank" rel="noopener noreferrer" className="block text-center py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold">WhatsApp</a>
+        </div>
+      </>) : null}
+      {cLinks.length > 0 && <p className="text-[11px] text-slate-400">যোগাযোগ করার জন্য এই লিংকে ক্লিক করুন:</p>}
+      {cLinks.map((k, i) => <a key={i} href={k.url} target="_blank" rel="noopener noreferrer" className="block text-center py-2.5 bg-blue-600 text-white rounded-xl text-xs font-bold break-words">{k.label || k.url}</a>)}
+      {!wa && cLinks.length === 0 && <p className="text-xs text-slate-400">অ্যাডমিন এখনো যোগাযোগের তথ্য সেট করেননি।</p>}
+    </div>
+  );
 
   return (
     <div className="p-4 space-y-4">
@@ -648,18 +752,74 @@ function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress,
 
       {screen === 'create' && (
         <div className="space-y-3">
-          {myPosts.length > 0 && (
-            <div className={`${card} p-3 space-y-2`}>
-              <p className="text-xs font-bold">আমার সেল পোস্ট</p>
-              {myPosts.map(p => (
-                <div key={p.id} className="flex items-start justify-between space-x-2">
-                  <div className="min-w-0"><p className="text-xs font-semibold truncate">{p.title}</p>
-                    {p.status === 'rejected' && p.rejectReason && <p className="text-[10px] text-red-400 break-words">কারণ: {p.rejectReason}</p>}</div>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black flex-shrink-0 ${mkStatusCls(p.status)}`}>{p.status === 'reserved' ? 'Approved' : p.status.charAt(0).toUpperCase() + p.status.slice(1)}</span>
-                </div>))}
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => { setCreateTab('new'); setMineSel(null); }} className={`py-2.5 rounded-xl text-xs font-bold ${createTab === 'new' ? 'bg-indigo-600 text-white' : `${t.card} border ${t.border}`}`}>নতুন সেল পোস্ট</button>
+            <button type="button" onClick={() => setCreateTab('mine')} className={`py-2.5 rounded-xl text-xs font-bold ${createTab === 'mine' ? 'bg-indigo-600 text-white' : `${t.card} border ${t.border}`}`}>My Sell Posts{myPosts.length ? ` (${myPosts.length})` : ''}</button>
+          </div>
+
+          {createTab === 'mine' && !mineSel && (
+            <div className="space-y-2.5 max-h-[70vh] overflow-y-auto overscroll-contain pr-0.5" style={{ WebkitOverflowScrolling: 'touch' }}>
+              {myPosts.length === 0 && <p className="text-xs text-slate-500 text-center py-8">আপনি এখনো কোনো সেল পোস্ট করেননি।</p>}
+              {myPosts.map(p => {
+                const reqs = sellerOrders.filter(o => o.listingId === p.id);
+                const last = reqs[0];
+                return (
+                  <button key={p.id} type="button" onClick={() => setMineSel(p.id)} className={`w-full text-left ${card} p-3 flex space-x-3`}>
+                    <img src={p.cover} alt="" className="w-20 h-20 object-cover rounded-xl flex-shrink-0" />
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <p className="text-xs font-black break-words">{p.title}</p>
+                      <p className="text-[11px] text-slate-400">{mkTk(p.price)} • Level {p.level}</p>
+                      <p className="text-[10px] text-slate-500">{new Date(p.createdAtMs).toLocaleString('en-GB')}</p>
+                      {last && <p className="text-[10px] text-amber-300">ক্রয়-অনুরোধ: {mkStatusLabel(last)}</p>}
+                    </div>
+                    <span className={`self-start px-2 py-1 rounded-full text-[10px] font-black flex-shrink-0 ${mkStatusCls(p.status)}`}>{mkPostLabel(p.status)}</span>
+                  </button>);
+              })}
             </div>
           )}
-          {hasPending && <div className="rounded-xl p-3 text-xs text-amber-400 bg-amber-500/10">আপনার একটি পোস্ট ইতিমধ্যে যাচাইয়ে (Pending) আছে। অ্যাডমিন Approve বা Reject করার পর নতুন পোস্ট করতে পারবেন।</div>}
+
+          {createTab === 'mine' && mineSel && (() => {
+            const p = myPosts.find(x => x.id === mineSel);
+            if (!p) return <p className="text-xs text-slate-500">পোস্ট পাওয়া যায়নি।</p>;
+            const reqs = sellerOrders.filter(o => o.listingId === p.id);
+            return (
+              <div className="space-y-3">
+                <button type="button" onClick={() => setMineSel(null)} className="flex items-center space-x-1 text-xs text-slate-400"><ArrowLeft className="w-4 h-4" /><span>আমার সেল পোস্ট</span></button>
+                <div className={`${card} overflow-hidden`}>
+                  <img src={p.cover} alt="" onClick={() => setLightbox(p.cover)} className="w-full object-cover cursor-pointer" style={{ aspectRatio: '16/9' }} />
+                  <div className="p-3 space-y-2">
+                    <div className="flex items-start justify-between space-x-2"><p className="text-sm font-black break-words">{p.title}</p><span className={`px-2 py-1 rounded-full text-[10px] font-black flex-shrink-0 ${mkStatusCls(p.status)}`}>{mkPostLabel(p.status)}</span></div>
+                    <p className="text-xs text-slate-400">Level {p.level} • বিক্রয়মূল্য {mkTk(p.price)} • {new Date(p.createdAtMs).toLocaleString('en-GB')}</p>
+                    <FeeBox price={p.price} />
+                    {p.status === 'rejected' && p.rejectReason && <p className="text-xs text-red-400 break-words">Reject-এর কারণ: {p.rejectReason}</p>}
+                    {p.description && <p className="text-xs text-slate-300 whitespace-pre-line break-words">{p.description}</p>}
+                    {p.extra && <p className="text-xs text-slate-400 whitespace-pre-line break-words">{p.extra}</p>}
+                  </div>
+                </div>
+                <div className={`${card} p-3 space-y-2`}>
+                  <p className="text-xs font-bold">ক্রয়-অনুরোধ ({reqs.length})</p>
+                  {reqs.length === 0 && <p className="text-[11px] text-slate-500">এখনো কোনো ক্রেতা অনুরোধ করেননি।</p>}
+                  {reqs.map(o => (
+                    <div key={o.id} className="flex items-center justify-between space-x-2 text-[11px]">
+                      <div className="min-w-0"><p className="font-semibold break-words">ক্রেতা: {o.buyerName}</p><p className="text-slate-500">{new Date(o.createdAtMs).toLocaleString('en-GB')}</p></div>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black flex-shrink-0 ${mkStatusCls(o.status === 'rejected' ? 'rejected' : o.status)}`}>{mkStatusLabel({ status: o.status })}</span>
+                    </div>))}
+                </div>
+                <div className={`${card} p-3 space-y-2`}>
+                  <p className="text-xs font-bold">অ্যাডমিনের সাথে যোগাযোগ</p>
+                  <p className="text-[10px] text-slate-500">ক্রয়-অনুরোধ ও পেমেন্ট নিয়ে অ্যাডমিনের সাথে কথা বলুন।</p>
+                  <ContactBlock />
+                </div>
+                <p className="text-xs font-bold">স্ক্রিনশট{mineShots ? ` (${mineShots.length})` : ''}</p>
+                {!mineShots ? <p className="text-xs text-slate-500">লোড হচ্ছে…</p> : (
+                  <div className="grid grid-cols-3 gap-2">{mineShots.map((d, i) => <img key={i} src={d} alt="" onClick={() => setLightbox(d)} className="w-full object-cover rounded-xl cursor-pointer" style={{ aspectRatio: '9/16' }} />)}</div>
+                )}
+              </div>
+            );
+          })()}
+
+          {createTab === 'new' && (<>
+          {hasPending && <div className="rounded-xl p-3 text-xs text-amber-400 bg-amber-500/10">আপনার একটি পোস্ট ইতিমধ্যে যাচাইয়ে (Pending) আছে। অ্যাডমিন Approve বা Reject করার পর নতুন পোস্ট করতে পারবেন। অবস্থা দেখতে "My Sell Posts" খুলুন।</div>}
           <div className={`${card} p-3 space-y-2.5 ${hasPending ? 'opacity-50 pointer-events-none' : ''}`}>
             <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="আইডির টাইটেল" className={inp} />
             <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="আইডির বিস্তারিত বিবরণ" rows={4} className={inp} />
@@ -682,18 +842,20 @@ function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress,
               {uploading ? 'ছবি প্রস্তুত হচ্ছে…' : '+ স্ক্রিনশট যোগ করুন (JPG/PNG/WEBP)'}
               <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" disabled={uploading || pics.length >= MK_MAX_SHOTS} onChange={addPics} />
             </label>
-            <p className="text-[10px] text-slate-500">প্রথম ছবিটি কার্ডের কভার হবে। ছবি নিজে থেকে ছোট করে নেওয়া হয়।</p>
+            <p className="text-[10px] text-slate-500">প্রথম ছবিটি কার্ডের কভার হবে। ছবির মান যতটা সম্ভব ঠিক রেখে আপলোড হয়।</p>
             <div className="grid grid-cols-4 gap-1.5">
               {pics.map((d, i) => (
                 <div key={i} className="relative">
-                  <img src={d} alt="" className="w-full object-cover rounded-lg" style={{ aspectRatio: '1/1' }} />
+                  <img src={d} alt="" onClick={() => setLightbox(d)} className="w-full object-cover rounded-lg" style={{ aspectRatio: '1/1' }} />
                   {i === 0 ? <span className="absolute bottom-0 left-0 right-0 text-center text-[8px] font-black bg-indigo-600 text-white rounded-b-lg">COVER</span>
                     : <button type="button" onClick={() => setPics([d, ...pics.filter((_, k) => k !== i)])} className="absolute bottom-0 left-0 right-0 text-center text-[8px] font-bold bg-black/70 text-white rounded-b-lg">কভার</button>}
                   <button type="button" onClick={() => setPics(pics.filter((_, k) => k !== i))} className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-red-600 text-white text-[10px] font-black">✕</button>
                 </div>))}
             </div>
-            <button type="button" onClick={submitPost} disabled={busy || uploading || hasPending} className="disabled:opacity-50 w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">{busy ? 'জমা হচ্ছে…' : 'SUBMIT SELL POST'}</button>
+            {prog && <div className="space-y-1"><div className="h-2 rounded-full bg-slate-700 overflow-hidden"><div className="h-full bg-indigo-500 transition-all" style={{ width: `${prog.total ? (prog.done / prog.total) * 100 : 0}%` }} /></div><p className="text-[10px] text-slate-400 text-center">{prog.step} {prog.done}/{prog.total}</p></div>}
+            <button type="button" onClick={submitPost} disabled={busy || uploading || hasPending} className="disabled:opacity-50 w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold">{busy ? 'জমা হচ্ছে…' : resumeId ? 'আপলোড চালু করুন (RESUME)' : 'SUBMIT SELL POST'}</button>
           </div>
+          </>)}
         </div>
       )}
 
@@ -722,29 +884,37 @@ function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress,
       )}
 
       {/* ---- Buy confirm ---- */}
-      {buying && (
-        <div className="fixed inset-0 z-[75] bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => !busy && setBuying(null)}>
-          <div className={`${t.card} w-full max-w-sm rounded-2xl border ${t.border} p-5 space-y-3`} onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-bold text-sm">অর্ডার নিশ্চিত করুন</h3>
-            <p className="text-xs font-semibold break-words">{buying.title} <span className="text-slate-400">• Level {buying.level}</span></p>
-            <FeeBox price={buying.price} />
-            <div className="flex justify-between text-xs"><span className="text-slate-400">আপনার ব্যালেন্স</span><b>{mkTk(balance)}</b></div>
-            {balance < calc(buying.price).total && <p className="text-[11px] text-red-400">ব্যালেন্স যথেষ্ট নয়। আগে Add Money করুন।</p>}
-            <p className="text-[10px] text-slate-500">সম্মতি দিলে মোট টাকা আপনার ব্যালেন্স থেকে কেটে রাখা হবে। অ্যাডমিন Reject করলে পুরো টাকা ফেরত পাবেন।</p>
-            <div className="flex space-x-2">
-              <button type="button" disabled={busy} onClick={() => setBuying(null)} className={`flex-1 py-3 ${t.card} border ${t.border} rounded-xl text-xs font-bold`}>বাতিল</button>
-              <button type="button" disabled={busy || balance < calc(buying.price).total} onClick={doBuy} className="disabled:opacity-50 flex-1 py-3 bg-emerald-600 text-white rounded-xl text-xs font-bold">{busy ? 'হচ্ছে…' : 'সম্মত, Buy Now'}</button>
+      {buying && (() => {
+        const own = buying.sellerUid === user.uid;
+        const { total } = calc(buying.price);
+        const short = balance < total;
+        return (
+          <div className="fixed inset-0 z-[75] bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => !busy && setBuying(null)}>
+            <div className={`${t.card} w-full max-w-sm rounded-2xl border ${t.border} p-5 space-y-3 max-h-[92vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
+              <h3 className="font-bold text-sm">আইডি কিনুন</h3>
+              <p className="text-xs font-semibold break-words">{buying.title} <span className="text-slate-400">• Level {buying.level}</span></p>
+              <p className="text-xs text-slate-300">আইডি কিনতে অ্যাডমিনের সাথে নিচের নম্বর বা লিংকে যোগাযোগ করুন:</p>
+              <ContactBlock />
+              <FeeBox price={buying.price} />
+              <div className="flex justify-between text-xs"><span className="text-slate-400">আপনার ব্যালেন্স</span><b>{mkTk(balance)}</b></div>
+              {own && <p className="text-[11px] text-red-400">এটা আপনার নিজের আইডি, নিজে কেনা যায় না। (পরীক্ষার জন্য অন্য অ্যাকাউন্ট ব্যবহার করুন)</p>}
+              {!own && short && <p className="text-[11px] text-red-400">আপনার ব্যালেন্সে {mkTk(total)} নেই, তাই কিনতে পারবেন না। আগে Add Money করুন।</p>}
+              <p className="text-[11px] text-amber-300">নিচের "Buy Now" চাপলে আপনার অ্যাকাউন্ট থেকে {mkTk(total)} কেটে নেওয়া হবে। অ্যাডমিন Reject করলে পুরো টাকা ফেরত পাবেন।</p>
+              <div className="flex space-x-2">
+                <button type="button" disabled={busy} onClick={() => setBuying(null)} className={`flex-1 py-3 ${t.card} border ${t.border} rounded-xl text-xs font-bold`}>বাতিল</button>
+                <button type="button" disabled={busy || own || short} onClick={doBuy} className="disabled:opacity-50 flex-1 py-3 bg-emerald-600 text-white rounded-xl text-xs font-bold">{busy ? 'হচ্ছে…' : 'Buy Now'}</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ---- Order details ---- */}
       {orderView && (
         <div className="fixed inset-0 z-[75] bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setOrderView(null)}>
-          <div className={`${t.card} w-full max-w-sm rounded-2xl border ${t.border} p-5 space-y-2 max-h-[90vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
+          <div className={`${t.card} w-full max-w-sm rounded-2xl border ${t.border} p-5 space-y-2 max-h-[92vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between"><h3 className="font-bold text-sm">অর্ডার বিস্তারিত</h3><span className={`px-2 py-1 rounded-full text-[10px] font-black ${mkStatusCls(orderView.refundStatus === 'refunded' ? 'refunded' : orderView.status)}`}>{mkStatusLabel(orderView)}</span></div>
-            <img src={orderView.cover} alt="" className="w-full object-cover rounded-xl" style={{ aspectRatio: '16/9' }} />
+            <img src={orderView.cover} alt="" onClick={() => setLightbox(orderView.cover)} className="w-full object-cover rounded-xl cursor-pointer" style={{ aspectRatio: '16/9' }} />
             <p className="text-sm font-black break-words">{orderView.title}</p>
             <div className="text-[11px] space-y-1">
               <div className="flex justify-between"><span className="text-slate-400">অর্ডার নম্বর</span><b className="break-all text-right ml-2">{orderView.id}</b></div>
@@ -752,13 +922,13 @@ function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress,
               <div className="flex justify-between"><span className="text-slate-400">অ্যাডমিন ফি ({orderView.ratePerThousand}/হাজার)</span><b>{mkTk(orderView.adminFee)}</b></div>
               <div className="flex justify-between border-t border-slate-700/40 pt-1"><span className="font-bold">মোট</span><b className="text-emerald-400">{mkTk(orderView.total)}</b></div>
               <div className="flex justify-between"><span className="text-slate-400">তারিখ</span><b>{new Date(orderView.createdAtMs).toLocaleString('en-GB')}</b></div>
+              {orderView.status === 'pending' && <p className="text-amber-300">অ্যাডমিন পেমেন্ট যাচাই করছেন (Pending)। নিচের যোগাযোগ মাধ্যমে অ্যাডমিনের সাথে কথা বলুন।</p>}
               {orderView.rejectReason && <p className="text-red-400 break-words">কারণ: {orderView.rejectReason}</p>}
               {orderView.refundStatus === 'refunded' && <p className="text-emerald-400">{mkTk(orderView.total)} আপনার ওয়ালেটে ফেরত দেওয়া হয়েছে।</p>}
             </div>
-            <div className="flex space-x-2 pt-1">
-              <button type="button" onClick={() => setContactOpen(true)} className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold">Admin Contact</button>
-              <button type="button" onClick={() => setOrderView(null)} className={`flex-1 py-2.5 ${t.card} border ${t.border} rounded-xl text-xs font-bold`}>বন্ধ করুন</button>
-            </div>
+            <p className="text-xs font-bold pt-1">অ্যাডমিনের সাথে যোগাযোগ</p>
+            <ContactBlock />
+            <button type="button" onClick={() => setOrderView(null)} className={`w-full py-2.5 ${t.card} border ${t.border} rounded-xl text-xs font-bold`}>বন্ধ করুন</button>
           </div>
         </div>
       )}
@@ -766,15 +936,9 @@ function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress,
       {/* ---- Admin contact ---- */}
       {contactOpen && (
         <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4" onClick={() => setContactOpen(false)}>
-          <div className={`${t.card} w-full max-w-sm rounded-2xl border ${t.border} p-5 space-y-3`} onClick={(e) => e.stopPropagation()}>
+          <div className={`${t.card} w-full max-w-sm rounded-2xl border ${t.border} p-5 space-y-3 max-h-[92vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-sm">Admin Contact</h3>
-            {wa ? (<>
-              <div className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 flex items-center justify-between`}>
-                <div><p className="text-[10px] text-slate-500">অ্যাডমিনের WhatsApp</p><p className="font-mono font-bold text-indigo-400">{settings.adminWhatsapp}</p></div>
-                <button type="button" onClick={() => copyToClipboard(settings.adminWhatsapp, 'Number')} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-[11px] font-bold">Copy</button>
-              </div>
-              <a href={waLink} target="_blank" rel="noopener noreferrer" className="block text-center py-3 bg-emerald-600 text-white rounded-xl text-xs font-bold">WhatsApp-এ যোগাযোগ করুন</a>
-            </>) : <p className="text-xs text-slate-400">অ্যাডমিন এখনো যোগাযোগের নম্বর সেট করেননি।</p>}
+            <ContactBlock />
             <button type="button" onClick={() => setContactOpen(false)} className={`w-full py-2.5 ${t.card} border ${t.border} rounded-xl text-xs font-bold`}>বন্ধ করুন</button>
           </div>
         </div>
@@ -783,7 +947,7 @@ function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress,
       {/* ---- Screenshot lightbox ---- */}
       {lightbox && (
         <div className="fixed inset-0 z-[90] bg-black/95 flex items-center justify-center p-2" onClick={() => setLightbox(null)}>
-          <img src={lightbox} alt="" className="max-w-full max-h-full object-contain" />
+          <img src={lightbox} alt="" className="max-w-full max-h-full object-contain" style={{ touchAction: 'pinch-zoom' }} />
           <button type="button" className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/20 text-white font-black">✕</button>
         </div>
       )}
@@ -2565,7 +2729,7 @@ export default function App() {
   const pickImage = (cb) => (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
-    compressImage(f, 500, 0.7).then(cb).catch(() => showToast('Image load fail'));
+    compressImage(f, 800, 0.78).then(cb).catch(() => showToast('Image load fail'));
     e.target.value = '';
   };
   const [urtbvView, setUrtbvView] = useState('menu'); // menu | videos | about | teams
@@ -3292,7 +3456,7 @@ export default function App() {
     setOrderNote('');
   };
 
-    const compressImage = (file, maxWidth = 500, quality = 0.6) => {
+    const compressImage = (file, maxWidth = 900, quality = 0.82) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -3300,9 +3464,12 @@ export default function App() {
         img.onload = () => {
           const canvas = document.createElement('canvas');
           const scale = Math.min(1, maxWidth / img.width);
-          canvas.width = img.width * scale;
-          canvas.height = img.height * scale;
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
           const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingQuality = 'high';
+          ctx.fillStyle = '#ffffff'; // transparent PNG kalo hoye jaoya thekano
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           resolve(canvas.toDataURL('image/jpeg', quality));
         };
@@ -3444,7 +3611,7 @@ export default function App() {
     const handleLogoImageUpload = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    compressImage(file, 300, 0.6).then(setLogoInput);
+    compressImage(file, 400, 0.8).then(setLogoInput);
   };
 
   const handleSaveLogo = () => {
@@ -3492,7 +3659,7 @@ export default function App() {
     const handlePaymentIconUpload = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file || !iconUploadTarget) return;
-    compressImage(file, 150, 0.6).then(result => {
+    compressImage(file, 200, 0.8).then(result => {
       const [pmName, typeKey] = String(iconUploadTarget).split('|');
       setPaymentMethodsConfig(prev => prev.map(m => {
         if (m.name !== pmName) return m;
@@ -3514,7 +3681,7 @@ export default function App() {
     const handleProfileAvatarUpload = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    compressImage(file, 300, 0.6).then(setProfileAvatarInput);
+    compressImage(file, 400, 0.8).then(setProfileAvatarInput);
   };
 
   const handleSaveProfile = () => {
