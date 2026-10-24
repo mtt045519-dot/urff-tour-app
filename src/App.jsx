@@ -407,7 +407,7 @@ const MK_DEFAULTS = {
   ratePerThousand: 50, adminWhatsapp: '', terms: '', rules: [], contactLinks: [],
   priceRanges: ['5000-10000', '10000-20000', '20000-50000', '50000-70000', '70000-100000', '100000-200000', '200000-'],
 };
-const MK_MIN_SHOTS = 15, MK_MAX_SHOTS = 20, MK_MIN_LEVEL = 55;
+const MK_MIN_SHOTS = 4, MK_MAX_SHOTS = 10, MK_MIN_LEVEL = 55;
 const mkTk = (n) => '৳' + Number(n || 0).toLocaleString('en-US');
 const mkParseRange = (r) => { const [a, b] = String(r).split('-'); return [Number(a) || 0, b ? Number(b) : Infinity]; };
 const mkRangeLabel = (r) => { const [a, b] = mkParseRange(r); return b === Infinity ? `${mkTk(a)}+` : `${mkTk(a)} – ${mkTk(b)}`; };
@@ -551,13 +551,15 @@ function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress,
   };
 
   const addPics = async (e) => {
-    const files = Array.from(e.target.files || []); e.target.value = '';
+    let files = Array.from(e.target.files || []); e.target.value = '';
+    if (!files.length) return;
+    if (pics.length + files.length > MK_MAX_SHOTS) { showToast('আপনি সর্বোচ্চ ১০টি ছবি আপলোড করতে পারবেন।'); files = files.slice(0, Math.max(0, MK_MAX_SHOTS - pics.length)); }
     if (!files.length) return;
     setUploading(true);
     const out = [...pics];
     let blanks = 0;
     for (const f of files) {
-      if (out.length >= MK_MAX_SHOTS) { showToast(`সর্বোচ্চ ${MK_MAX_SHOTS}টি স্ক্রিনশট`); break; }
+      if (out.length >= MK_MAX_SHOTS) { showToast('আপনি সর্বোচ্চ ১০টি ছবি আপলোড করতে পারবেন।'); break; }
       if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { showToast('শুধু JPG/PNG/WEBP ছবি দিন'); continue; }
       if (f.size > 15 * 1024 * 1024) { showToast('ছবি ১৫MB-র বেশি, ছোট ছবি দিন'); continue; }
       try {
@@ -592,7 +594,7 @@ function IdMarket({ user, me, darkMode, t, showToast, copyToClipboard, compress,
     if (!(Number(form.price) >= 1000)) { showToast('বিক্রয়মূল্য কমপক্ষে ১,০০০ টাকা'); return; }
     if (!/^(\+?88)?01\d{9}$/.test(form.whatsapp.replace(/[\s-]/g, ''))) { showToast('WhatsApp নম্বর ঠিক নয়'); return; }
     if (!/^(\+?88)?01\d{9,10}$/.test(form.payAccount.replace(/[\s-]/g, ''))) { showToast('পেমেন্ট অ্যাকাউন্ট নম্বর ঠিক নয়'); return; }
-    if (pics.length < MK_MIN_SHOTS) { showToast(`কমপক্ষে ${MK_MIN_SHOTS}টি স্ক্রিনশট দিন (এখন ${pics.length}টি)`); return; }
+    if (pics.length < MK_MIN_SHOTS) { showToast('অনুগ্রহ করে সর্বনিম্ন ৪টি ছবি আপলোড করুন।'); return; }
     setBusy(true);
     try {
       let id = resumeId;
@@ -1106,6 +1108,12 @@ export default function App() {
     return () => unsub();
   }, []);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notifQueue, setNotifQueue] = useState([]);
+  const [notifSwipeX, setNotifSwipeX] = useState(0);
+  const notifTouchRef = useRef(null);
+  const [notifState, setNotifState] = useState({ readIds: [], hiddenIds: [] });
+  const [notifStateReady, setNotifStateReady] = useState(false);
+  const [adminOnline, setAdminOnline] = useState(false);
 
   const [registeredUsers, setRegisteredUsers] = useState([
     { number: '01704814095', password: 'password123', name: 'URTamjid', email: 'urtamjid5@gmail.com', uid: 'GMHF84', depositBalance: 300.00, winningBalance: 200.00, totalDeposited: 300.00, totalWithdrawn: 0.00 }
@@ -1888,12 +1896,67 @@ export default function App() {
       _notifSeenRef.current = ids;
       return;
     }
-    const fresh = userNotifications.some(n =>
-      !_notifSeenRef.current.has(String(n.id)) && (!n.targetUid || n.targetUid === 'all' || n.targetUid === user.uid)
+    const freshList = userNotifications.filter(n =>
+      !_notifSeenRef.current.has(String(n.id)) && (!n.targetUid || n.targetUid === 'all' || n.targetUid === 'ALL' || n.targetUid === user.uid)
     );
     _notifSeenRef.current = ids;
-    if (fresh && hasActiveSession) playSound('notify');
+    if (freshList.length && hasActiveSession) {
+      playSound('notify');
+      setNotifQueue(q => [...q, ...freshList.filter(n => !q.some(x => x.id === n.id))].slice(-5));
+    }
   }, [userNotifications]);
+
+  // Per-user read/hidden state (shared broadcast notifications are never deleted for everyone)
+  useEffect(() => {
+    if (!user || !user.uid) return;
+    setNotifStateReady(false);
+    const unsub = onSnapshot(doc(db, 'notifState', user.uid), (sn) => {
+      setNotifState(sn.exists() ? { readIds: sn.data().readIds || [], hiddenIds: sn.data().hiddenIds || [] } : { readIds: [], hiddenIds: [] });
+      setNotifStateReady(true);
+    }, () => setNotifStateReady(true));
+    return () => unsub();
+  }, [user && user.uid]);
+
+  // On app start: show up to 3 notifications that are still unread (pending sync)
+  const _notifInitRef = useRef(false);
+  useEffect(() => {
+    if (_notifInitRef.current || !notifStateReady || !hasActiveSession || !userNotifications.length) return;
+    _notifInitRef.current = true;
+    const pending = userNotifications
+      .filter(n => (n.targetUid === user.uid || n.targetUid === 'ALL') && !notifState.readIds.includes(String(n.id)) && !notifState.hiddenIds.includes(String(n.id)))
+      .filter(n => { const c = parseInt(String(n.id || '').replace('not_', ''), 10); return !c || (Date.now() - c) < 24 * 3600 * 1000; })
+      .slice(0, 3);
+    if (pending.length) setNotifQueue(pending);
+  }, [notifStateReady, userNotifications, hasActiveSession]);
+
+  // auto-dismiss the popup after a few seconds
+  useEffect(() => {
+    if (!notifQueue.length) return;
+    const id = setTimeout(() => { setNotifSwipeX(0); setNotifQueue(q => q.slice(1)); }, 7000);
+    return () => clearTimeout(id);
+  }, [notifQueue]);
+
+  // Admin presence heartbeat (free alternative to Realtime Database presence)
+  const adminSessionRef = useRef('adm_' + Math.random().toString(36).slice(2, 10));
+  useEffect(() => {
+    if (!isAdminAuthenticated || activeTab !== 'admin') return;
+    const ref = doc(db, 'adminPresence', adminSessionRef.current);
+    const beat = () => { if (document.visibilityState === 'visible') setDoc(ref, { lastSeenMs: Date.now() }).catch(() => {}); };
+    beat();
+    const iv = setInterval(beat, 25000);
+    document.addEventListener('visibilitychange', beat);
+    return () => { clearInterval(iv); document.removeEventListener('visibilitychange', beat); deleteDoc(ref).catch(() => {}); };
+  }, [isAdminAuthenticated, activeTab]);
+
+  // User side: is any admin online? (heartbeat newer than 90 seconds)
+  useEffect(() => {
+    if (!showAskProblem) return;
+    let stamps = [];
+    const calc = () => setAdminOnline(stamps.some(ms => Date.now() - ms < 90000));
+    const unsub = onSnapshot(collection(db, 'adminPresence'), (sn) => { stamps = sn.docs.map(d => Number(d.data().lastSeenMs || 0)); calc(); }, () => {});
+    const iv = setInterval(calc, 15000);
+    return () => { unsub(); clearInterval(iv); };
+  }, [showAskProblem]);
 
   // Toast messages also get a matching sound (error / success) unless another sound just played.
   const showToast = (msg) => {
@@ -2716,8 +2779,27 @@ export default function App() {
     return () => unsub();
   }, []);
   const saveUrtbv = async (next, msg) => {
+    const prevU = urtbv;
     setUrtbv(next);
-    try { await setDoc(doc(db, 'appData', 'urtbv'), { ...next, updatedAtMs: Date.now() }); showToast(msg || 'URTBV update kora hoyeche!'); }
+    try {
+      await setDoc(doc(db, 'appData', 'urtbv'), { ...next, updatedAtMs: Date.now() }); showToast(msg || 'URTBV update kora hoyeche!');
+      // নতুন Daily Tour / App Details আইটেম আর Rules বদল হলে বাংলা নোটিফিকেশন (একই তথ্যে বারবার নয়)
+      [['videos', 'videos'], ['about', 'about']].forEach(([k, view]) => {
+        const oldIds = new Set((prevU[k] || []).map(x => x.id));
+        (next[k] || []).filter(x => x && x.id && !oldIds.has(x.id)).forEach(x => notifyEvent(`urtbv_${k}_${x.id}`, {
+          title: 'টুর্নামেন্টের নতুন আপডেট! 📢',
+          message: 'URFF TOUR-এ নতুন Tournament Information বা Schedule Update করা হয়েছে। বিস্তারিত দেখে নিন।',
+          route: { type: 'urtbv', view },
+        }));
+      });
+      const rh = (r) => _hashObj([r.title, r.summary, r.description, r.image ? r.image.length : 0, r.icon ? r.icon.length : 0, r.videoUrl, r.youtubeUrl]);
+      const oldRules = Object.fromEntries((prevU.rules || []).map(r => [r.id, rh(r)]));
+      (next.rules || []).filter(r => r && r.enabled !== false && oldRules[r.id] !== rh(r)).forEach(r => notifyEvent(`ufrules_${r.id}_${rh(r)}`, {
+        title: 'টুর্নামেন্টের নিয়ম আপডেট হয়েছে! 📋',
+        message: 'URFF TOUR-এর নিয়মাবলিতে নতুন তথ্য যোগ বা পরিবর্তন করা হয়েছে। অংশগ্রহণের আগে আপডেট করা Rules দেখে নিন।',
+        route: { type: 'rules' },
+      }));
+    }
     catch (e) { console.error('URTBV save error:', e); showToast('URTBV save fail: ' + (e && e.code ? e.code : 'error')); }
   };
   const openExternal = (raw) => {
@@ -3814,6 +3896,14 @@ export default function App() {
       setTournaments(tournaments.map(m => m.id === editingTourId ? fullyUpdated : m));
       setDoc(doc(db, 'tournaments', editingTourId), fullyUpdated).catch(e => console.error(e));
       showToast('Tournament updated!');
+      if (_hashObj([oldT.rules, oldT.rulesList || []]) !== _hashObj([fullyUpdated.rules, fullyUpdated.rulesList || []])) {
+        notifyEvent('trules_' + editingTourId + '_' + _hashObj([fullyUpdated.rules, fullyUpdated.rulesList || []]), {
+          title: 'টুর্নামেন্টের নিয়ম আপডেট হয়েছে! 📋',
+          message: 'URFF TOUR-এর নিয়মাবলিতে নতুন তথ্য যোগ বা পরিবর্তন করা হয়েছে। অংশগ্রহণের আগে আপডেট করা Rules দেখে নিন।',
+          route: { type: 'tournament', id: editingTourId },
+          uids: (matchParticipants[editingTourId] || []).map(p => p.accountUid).filter(Boolean),
+        });
+      }
     } else {
       const newT = {
         id: 'm_' + Date.now(),
@@ -3839,6 +3929,7 @@ export default function App() {
       setTournaments([newT, ...tournaments]);
             setDoc(doc(db, 'tournaments', newT.id), newT).catch(e => console.error(e));
       showToast('Tournament added!');
+      notifyEvent('tour_' + newT.id, { title: 'নতুন টুর্নামেন্ট এসেছে! 🏆', message: 'URFF TOUR-এ নতুন টুর্নামেন্ট যোগ করা হয়েছে। বিস্তারিত দেখে আপনার পছন্দের ম্যাচে অংশগ্রহণ করুন।', route: { type: 'tournament', id: newT.id } });
     }
 
     resetTourForm();
@@ -4029,8 +4120,9 @@ export default function App() {
       } : i));
       showToast('Shop item updated!');
     } else {
+      const _newShopId = 'd_' + Date.now();
       setShopItemsSynced([{
-        id: 'd_' + Date.now(),
+        id: _newShopId,
         title: newShopTitle,
         type: newShopType,
         price: parseFloat(newShopPrice),
@@ -4045,6 +4137,9 @@ export default function App() {
         courier: newShopCourier
       }, ...shopItems]);
       showToast('Shop item added!');
+      notifyEvent('shop_' + _newShopId, newShopType === 'diamond'
+        ? { title: 'নতুন Diamond Offer! 💎', message: 'URFF TOUR-এ নতুন Diamond Package বা Offer যোগ করা হয়েছে। বিস্তারিত দেখতে Diamond Top-Up সেকশনে যান।', route: { type: 'shop' } }
+        : { title: 'নতুন পণ্য যোগ করা হয়েছে! 🛍️', message: 'URFF TOUR-এ নতুন পণ্য এসেছে। বিস্তারিত দেখতে Shop সেকশনে প্রবেশ করুন।', route: { type: 'shop' } });
     }
     resetShopForm();
   };
@@ -4135,151 +4230,46 @@ export default function App() {
   // Builds a snapshot of THIS user's own real data (balance, their own orders, their own
   // joined matches/results) so the assistant can answer specific questions accurately —
   // scoped to only this account, never other users' data or platform-wide business info.
-  const buildUserContextBrief = (uid) => {
-    const target = registeredUsers.find(u => u.uid === uid) || (uid === user.uid ? user : null);
-    if (!target) return 'No account data available for this user.';
-    const myOrders = pendingShopOrders.filter(o => o.uid === uid);
-    const myJoinedMatches = tournaments.filter(mt => (matchParticipants[mt.id] || []).some(p => p.accountUid === uid));
-    const lines = [];
-    lines.push(`Name: ${target.name}, UID: ${target.uid}`);
-    lines.push(`Deposit Balance: ৳${target.depositBalance ?? 0}, Winning Balance: ৳${target.winningBalance ?? 0}, Total Deposited: ৳${target.totalDeposited ?? 0}, Total Withdrawn: ৳${target.totalWithdrawn ?? 0}`);
-    if (myOrders.length > 0) {
-      lines.push('Recent orders:');
-      myOrders.slice(0, 8).forEach(o => {
-        lines.push(`- ${o.itemTitle} (৳${o.price}) — status: ${o.status}${o.rejectReason ? `, reject reason: ${o.rejectReason}` : ''}`);
-      });
-    } else {
-      lines.push('No orders placed yet.');
-    }
-    if (myJoinedMatches.length > 0) {
-      lines.push('Joined matches:');
-      myJoinedMatches.slice(0, 8).forEach(mt => {
-        const hist = matchResultsHistory[mt.id];
-        const myResult = hist ? hist.winners.find(w => (w.accountUid || '').trim() === uid) : null;
-        lines.push(`- ${mt.title} (${mt.time}) — status: ${mt.status}${mt.started ? ' [started]' : ''}${myResult ? `, result: rank #${myResult.rank}, ${myResult.points} points, prize ৳${myResult.prize}` : ', result: not declared yet'}`);
-      });
-    } else {
-      lines.push('Has not joined any matches yet.');
-    }
-    return lines.join('\n');
-  };
-
-  // ---------- AI Support Assistant ("Ask Your Problem") ----------
-  // System prompt = the user's role/tone/constraints brief + live app facts (payment
-  // methods, rules, contact info) + this specific user's own account snapshot.
-  const buildSupportSystemPrompt = (uid) => {
-    const methods = paymentMethodsConfig.filter(m => m.enabled).map(m => m.name).join(', ');
-    return `Role: You are the core AI Assistant and Customer Support Agent for "UR FF TOUR", a Bangladeshi Free Fire tournament app. Your job is to assist users 24/7, answer their queries, and handle conversations when the human admin is offline.
-
-Core Responsibilities:
-1. User Problem Solving: When a user enters the "Ask Your Problem" section, listen carefully to their issues regarding the app or related topics and provide accurate, helpful, and friendly solutions.
-2. Comprehensive Knowledge: You possess complete knowledge about all features, details, and rules of this application (given below), AND the specific account details of the user you're currently talking to (also given below). Always guide users based on the app's actual functionalities and their real order/match history.
-3. Tone and Behavior: Be polite, professional, empathetic, and patient. Speak in the user's preferred language (support Bengali and English naturally) — match whichever language the user writes in.
-4. Admin Escalation: If a user's problem is too complex, requires human intervention, or if the user explicitly asks to talk to a human admin, politely inform them: "I am noting down your concern. Our admin will review this and get back to you soon." (say this in the user's language).
-5. Autonomy: Act reliably in the absence of the human admin, ensuring no user feels ignored.
-
-Constraints:
-- Never provide false or misleading information about the app.
-- If you do not know a specific internal detail, admit it gracefully and suggest contacting the admin.
-- Keep your answers clear, concise, and structured (use bullet points if necessary).
-- Never invent balances, transaction statuses, order/withdrawal decisions, or match results — use only the real account snapshot given below; for anything not in that snapshot, say the admin will check personally.
-- Only discuss THIS user's own orders, matches, wallet, and general app functionality. Never discuss other users' accounts, the admin's personal information, or the platform's internal business/financial data (revenue, other users' balances, admin decisions not related to this user).
-- If the user sends a voice message that could not be transcribed, or an image, acknowledge it and ask a clarifying question if the content isn't clear enough to act on.
-
-App facts you can rely on when answering:
-- Users join Free Fire tournaments (Solo/Duo/Squad) by paying an entry fee from their wallet (Deposit Balance + Winning Balance). Duo costs 2x entry fee, Squad costs 4x.
-- Deposit money via: ${methods || 'bKash/Nagad'} to the number shown on the Add Money screen.
-- Withdrawals: minimum ৳100, requested from Wallet > Withdraw using the user's total balance; admin approves manually.
-- Shop has two sections: Diamond Top-up (Free Fire UID top-ups) and Products (physical items — Cash on Delivery charges a ৳150 advance now and the rest on delivery, or pay the full amount online via wallet).
-- New accounts get a ৳30 signup bonus. Referral link/code (a friend's UID) earns the referrer ৳5 automatically after the friend's FIRST approved deposit (max 5 rewarded referrals per user).
-- Users can see joined matches in "My Match" and overall winners in "UR FF ALL MATCH RESULTS". Joined matches disappear from "My Match" 24 hours after the match time or 24 hours after results are declared, whichever is later.
-- Balance Share lets a user send wallet balance to another user's UID for a ৳5 fee.
-- Support contact number: ${appSettings.contactNumber || 'not set'}. Telegram: ${appSettings.telegramLink || 'not set'}.
-
-This user's own account snapshot (only ever discuss this account with this user, never anyone else's):
-${buildUserContextBrief(uid)}`;
-  };
-
-  const fetchAiSupportReply = async (uid, conversation) => {
+  // Ask Your Problem: ইউজারের মেসেজ সার্ভারে যাচাই হয় (পরিচয়, ব্লক, ২৪ ঘণ্টায় ৫০টির সীমা) এবং Auto-Reply সার্ভার থেকেই আসে।
+  const sendUserSupport = async (message) => {
+    const me2 = registeredUsers.find(u => u.uid === user.uid);
     try {
-      // Build proper multi-modal content: images go in as real image blocks (Claude can see
-      // them), voice messages use their transcript when available.
-      const apiMessages = conversation
-        .filter(m => m.sender === 'user' || m.sender === 'ai') // the API only sees user/assistant turns
-        .map(m => {
-          const role = m.sender === 'user' ? 'user' : 'assistant';
-          if (m.type === 'image' && m.imageUrl) {
-            const match = m.imageUrl.match(/^data:(image\/[a-zA-Z]+);base64,(.*)$/);
-            if (match) {
-              const content = [{ type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } }];
-              if (m.text) content.push({ type: 'text', text: m.text });
-              return { role, content };
-            }
-          }
-          if (m.type === 'voice') {
-            return { role, content: m.transcript ? m.transcript : '[User sent a voice message that could not be transcribed.]' };
-          }
-          return { role, content: m.text || '' };
-        });
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 400,
-          system: buildSupportSystemPrompt(uid),
-          messages: apiMessages
-        })
+      const res = await fetch(AUTO_PAYMENT_URL + '/api/v1/support/send?appId=urff2', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user.uid, password: me2 ? me2.password : '', message }),
       });
-      const data = await response.json();
-      const textBlock = (data.content || []).find(b => b.type === 'text');
-      const replyText = textBlock ? textBlock.text : 'Dukkhito, ekhon uttor dite parlam na. Admin shiggroi reply korbe.';
-      await appendSupportMessage(uid, { sender: 'ai', text: replyText, time: 'Just now', createdAtMs: Date.now() });
-    } catch (err) {
-      await appendSupportMessage(uid, { sender: 'ai', text: 'Ekhon assistant e shomossha hocche. Admin ke sরাসরি contact korun ba pore try korun.', time: 'Just now', createdAtMs: Date.now() });
-    }
+      const j = await res.json();
+      if (!j.ok) { showToast(j.message || 'মেসেজ পাঠানো যায়নি, আবার চেষ্টা করুন।'); return false; }
+      playSound('send');
+      return true;
+    } catch (e) { showToast('ইন্টারনেট সমস্যা, আবার চেষ্টা করুন।'); return false; }
   };
 
-  const handleSendSupportMessage = () => {
+  const handleSendSupportMessage = async () => {
     const text = supportChatInput.trim();
     if (!text) return;
-    if (getSupportBlockInfo(user.uid)) { showToast('Apnar message dewa bondho kora hoyeche. Karon dekhun.'); return; }
-    playSound('send');
-    const uid = user.uid;
-    const existing = supportChats[uid] || { messages: [], aiEnabled: true };
-    const message = { sender: 'user', text, time: 'Just now', createdAtMs: Date.now() };
-    const updatedMessages = [...(existing.messages || []), message];
-    appendSupportMessage(uid, message);
+    if (getSupportBlockInfo(user.uid)) { showToast('আপনার মেসেজ পাঠানো বন্ধ করা হয়েছে। কারণ দেখুন।'); return; }
     setSupportChatInput('');
-    if (existing.aiEnabled !== false) {
-      setSupportChatLoading(true);
-      fetchAiSupportReply(uid, updatedMessages).finally(() => setSupportChatLoading(false));
-    }
+    const ok = await sendUserSupport({ type: 'text', text });
+    if (!ok) setSupportChatInput(text);
   };
 
-  // Shared appenders for image/voice messages from either side of a support chat.
-  const appendUserChatMessage = (uid, message, triggerAi) => {
-    const existing = supportChats[uid] || { messages: [], aiEnabled: true };
-    const normalizedMessage = { ...message, createdAtMs: message.createdAtMs || Date.now() };
-    const updatedMessages = [...(existing.messages || []), normalizedMessage];
-    appendSupportMessage(uid, normalizedMessage);
-    if (triggerAi && existing.aiEnabled !== false) {
-      setSupportChatLoading(true);
-      fetchAiSupportReply(uid, updatedMessages).finally(() => setSupportChatLoading(false));
-    }
+  // ইউজারের ছবি/ভয়েস সার্ভারের পথে যায়; অ্যাডমিনের মেসেজ আগের মতোই সরাসরি।
+  const appendUserChatMessage = (uid, message) => {
+    if (message.sender === 'user') { sendUserSupport(message); return; }
+    appendSupportMessage(uid, { ...message, createdAtMs: message.createdAtMs || Date.now() });
   };
 
   const handleUserChatImageUpload = (e) => {
-    if (getSupportBlockInfo(user.uid)) { showToast('Apnar message dewa bondho kora hoyeche.'); if (e.target) e.target.value = ''; return; }
+    if (getSupportBlockInfo(user.uid)) { showToast('আপনার মেসেজ পাঠানো বন্ধ করা হয়েছে।'); if (e.target) e.target.value = ''; return; }
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      appendUserChatMessage(user.uid, { sender: 'user', type: 'image', imageUrl: ev.target.result, text: '', time: 'Just now' }, true);
-    };
-    reader.readAsDataURL(file);
     e.target.value = '';
+    compressImage(file, 1000, 0.75).then(async (d) => {
+      let url = d;
+      if (url.length > 370000) url = await compressImage(file, 800, 0.6);
+      appendUserChatMessage(user.uid, { sender: 'user', type: 'image', imageUrl: url, text: '', time: 'Just now' });
+    }).catch(() => showToast('ছবি লোড হয়নি'));
   };
 
   const handleAdminChatImageUpload = (e) => {
@@ -4290,7 +4280,7 @@ ${buildUserContextBrief(uid)}`;
       const uid = adminSupportSelectedUid;
       const message = { sender: 'admin', type: 'image', imageUrl: ev.target.result, text: '', time: 'Just now', createdAtMs: Date.now() };
       appendSupportMessage(uid, message);
-      setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Admin Replied', message: 'Apnar "Ask Your Problem" chat e admin ekta chobi pathiyeche.', time: 'Just now', targetUid: uid }, ...prev]);
+      setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'অ্যাডমিন উত্তর দিয়েছেন 💬', message: 'আপনার "Ask Your Problem" চ্যাটে অ্যাডমিন একটি ছবি পাঠিয়েছেন।', time: 'Just now', targetUid: uid }, ...prev]);
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -4340,7 +4330,7 @@ ${buildUserContextBrief(uid)}`;
           if (forAdmin && adminSupportSelectedUid) {
             const uid = adminSupportSelectedUid;
             appendSupportMessage(uid, message);
-            setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Admin Replied', message: 'Apnar "Ask Your Problem" chat e admin ekta voice message pathiyeche.', time: 'Just now', targetUid: uid }, ...prev]);
+            setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'অ্যাডমিন উত্তর দিয়েছেন 💬', message: 'আপনার "Ask Your Problem" চ্যাটে অ্যাডমিন উত্তর দিয়েছেন।', time: 'Just now', targetUid: uid }, ...prev]);
           } else if (!forAdmin) {
             appendUserChatMessage(user.uid, message, true);
           }
@@ -4374,7 +4364,7 @@ ${buildUserContextBrief(uid)}`;
     playSound('send');
     const uid = adminSupportSelectedUid;
     appendSupportMessage(uid, { sender: 'admin', text, time: 'Just now', createdAtMs: Date.now() });
-    setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Admin Replied', message: 'Apnar "Ask Your Problem" chat e admin reply diyeche.', time: 'Just now', targetUid: uid }, ...prev]);
+    setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'অ্যাডমিন উত্তর দিয়েছেন 💬', message: 'আপনার "Ask Your Problem" চ্যাটে অ্যাডমিন উত্তর দিয়েছেন।', time: 'Just now', targetUid: uid }, ...prev]);
     setAdminSupportInput('');
   };
 
@@ -4581,7 +4571,16 @@ ${buildUserContextBrief(uid)}`;
       }
     }));
     winnerEntries.forEach(w => {
-      setUserNotifications(prev => [{ id: 'not_' + Date.now() + Math.random(), title: 'Congratulations! 🏆', message: `Apni "${matchResultsModal.title}" match e Rank #${w.rank} hoyechen. Prize: ${w.prize} Taka.`, time: 'Just now', targetUid: w.accountUid }, ...prev]);
+      setUserNotifications(prev => [{ id: 'not_' + Date.now() + Math.random(), title: 'অভিনন্দন! 🏆', message: `আপনি "${matchResultsModal.title}" ম্যাচে ${w.rank} নম্বর র্যাংক পেয়েছেন। পুরস্কার: ${w.prize} টাকা।`, time: 'Just now', targetUid: w.accountUid, route: { type: 'result', id: matchResultsModal.id } }, ...prev]);
+    });
+    // টুর্নামেন্টের সব অংশগ্রহণকারীকে একবারই ফলাফলের নোটিফিকেশন (বিজয়ীরা আলাদা অভিনন্দন পাচ্ছেন)
+    const _winnerUids = winnerEntries.map(w => (w.accountUid || '').trim()).filter(Boolean);
+    const _partUids = (matchParticipants[matchResultsModal.id] || []).map(p => p.accountUid).filter(u => u && !_winnerUids.includes(u));
+    notifyEvent('result_' + matchResultsModal.id, {
+      title: 'টুর্নামেন্টের ফলাফল প্রকাশিত হয়েছে! 🏆',
+      message: 'আপনার অংশগ্রহণ করা টুর্নামেন্টের ফলাফল প্রকাশ করা হয়েছে। এখনই Result দেখে নিন।',
+      route: { type: 'result', id: matchResultsModal.id },
+      uids: _partUids,
     });
     setMatchResultsModal(null);
     setWinnerEntries([{ name: '', accountUid: '', rank: '', prize: '', points: '' }]);
@@ -4595,21 +4594,71 @@ ${buildUserContextBrief(uid)}`;
   const NOTIFICATION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
   const myNotifications = userNotifications.filter(n => {
     if (n.targetUid !== user.uid && n.targetUid !== 'ALL') return false;
+    if ((notifState.hiddenIds || []).includes(String(n.id))) return false;
     const createdAt = parseInt((n.id || '').replace('not_', ''), 10);
     if (!createdAt || isNaN(createdAt)) return true;
     return (Date.now() - createdAt) < NOTIFICATION_MAX_AGE_MS;
   });
   
+  const markNotifRead = (list) => {
+    const ids = list.map(n => String(n.id)).filter(id => !(notifState.readIds || []).includes(id));
+    if (!ids.length || !user || !user.uid) return;
+    setDoc(doc(db, 'notifState', user.uid), { readIds: arrayUnion(...ids) }, { merge: true }).catch(e => console.error(e));
+  };
+
+  // Shared (ALL) notifications are only hidden for this user; personal ones are deleted.
   const handleDeleteNotification = (id) => {
-    setUserNotifications(prev => prev.filter(n => n.id !== id));
-    deleteDoc(doc(db, 'notifications', String(id))).catch(e => console.error(e));
+    const n = userNotifications.find(x => String(x.id) === String(id));
+    if (n && n.targetUid === 'ALL') {
+      setDoc(doc(db, 'notifState', user.uid), { hiddenIds: arrayUnion(String(id)) }, { merge: true }).catch(e => console.error(e));
+    } else {
+      setUserNotifications(prev => prev.filter(x => x.id !== id));
+      deleteDoc(doc(db, 'notifications', String(id))).catch(e => console.error(e));
+    }
   };
 
   const handleClearAllNotifications = () => {
-    const remaining = userNotifications.filter(n => !myNotifications.some(m => m.id === n.id));
-    myNotifications.forEach(n => deleteDoc(doc(db, 'notifications', String(n.id))).catch(e => console.error(e)));
-    setUserNotifications(remaining);
+    const shared = myNotifications.filter(n => n.targetUid === 'ALL').map(n => String(n.id));
+    const personal = myNotifications.filter(n => n.targetUid !== 'ALL');
+    if (shared.length) setDoc(doc(db, 'notifState', user.uid), { hiddenIds: arrayUnion(...shared) }, { merge: true }).catch(e => console.error(e));
+    personal.forEach(n => deleteDoc(doc(db, 'notifications', String(n.id))).catch(e => console.error(e)));
+    setUserNotifications(prev => prev.filter(n => !personal.some(m => m.id === n.id)));
   };
+
+  // Tap on a notification -> open the relevant screen
+  const openNotifTarget = (n) => {
+    const r = n && n.route;
+    if (!r) return;
+    setShowNotifications(false);
+    if (r.type === 'tournament') { const mt = tournaments.find(x => x.id === r.id); setActiveTab('home'); if (mt) setMatchDetailView(mt); }
+    else if (r.type === 'result') { setActiveTab('results'); }
+    else if (r.type === 'shop') { setActiveTab('shop'); }
+    else if (r.type === 'urtbv' || r.type === 'rules') { setActiveTab('urtbv'); setUrtbvRuleId(null); setUrtbvView(r.view || 'rules'); }
+    else if (r.type === 'market') { setActiveTab('urtbv'); setUrtbvView('idmarket'); }
+  };
+
+  // Publish an event notification exactly once (eventLocks prevents duplicates). uids: array = targeted, omitted = everyone.
+  const notifyEvent = async (eventId, { title, message, route, uids }) => {
+    try {
+      if (Array.isArray(uids) && uids.length === 0) return;
+      const lockRef = doc(db, 'eventLocks', eventId);
+      let fresh = false;
+      await runTransaction(db, async (tx) => {
+        const sn = await tx.get(lockRef);
+        if (sn.exists()) return;
+        tx.set(lockRef, { atMs: Date.now() });
+        fresh = true;
+      });
+      if (!fresh) return;
+      const targets = Array.isArray(uids) ? [...new Set(uids)] : ['ALL'];
+      targets.forEach((target, i) => {
+        const id = 'not_' + (Date.now() + i);
+        setDoc(doc(db, 'notifications', id), { id, title, message, time: 'Just now', targetUid: target, route: route || null, eventId, createdAtMs: Date.now() }).catch(e => console.error(e));
+        fetch('/api/send-notification', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, message, targetUid: target }) }).catch(() => {});
+      });
+    } catch (e) { console.error('notifyEvent error', e); }
+  };
+  const _hashObj = (o) => { const str = JSON.stringify(o); let h = 5381; for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
 
   const t = darkMode
     ? { bg: 'bg-slate-950', card: 'bg-slate-900', border: 'border-slate-800', text: 'text-slate-100', sub: 'text-slate-400', input: 'bg-slate-950 border-slate-800' }
@@ -4724,8 +4773,19 @@ ${buildUserContextBrief(uid)}`;
           </div>
         )}
 
-        <div className="w-full max-w-sm p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl space-y-5">
-          <div className="text-center space-y-2">
+        <style>{`
+          @keyframes urffUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+          @keyframes urffCard{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:none}}
+          .urff-auth-card{animation:urffCard 260ms ease-out both}
+          .urff-logo{animation:urffUp 260ms ease-out both}
+          .urff-auth-form>*{animation:urffUp 280ms ease-out both}
+          .urff-auth-form>*:nth-child(1){animation-delay:40ms}.urff-auth-form>*:nth-child(2){animation-delay:80ms}
+          .urff-auth-form>*:nth-child(3){animation-delay:120ms}.urff-auth-form>*:nth-child(4){animation-delay:160ms}
+          .urff-auth-form>*:nth-child(5){animation-delay:200ms}.urff-auth-form>*:nth-child(6){animation-delay:240ms}
+          @media (prefers-reduced-motion: reduce){.urff-auth-card,.urff-logo,.urff-auth-form>*{animation:none!important}}
+        `}</style>
+        <div className="urff-auth-card w-full max-w-sm p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl space-y-5">
+          <div className="urff-logo text-center space-y-2">
             <div className="w-16 h-16 rounded-2xl overflow-hidden mx-auto shadow-xl border border-slate-800">
               <img src={logoUrl} alt="URFF E-SPORTS" className="w-full h-full object-cover" />
             </div>
@@ -4734,7 +4794,7 @@ ${buildUserContextBrief(uid)}`;
           </div>
 
           {activeTab === 'login' ? (
-            <div className="space-y-4">
+            <div className="urff-auth-form space-y-4">
               <div>
                 <label className="text-xs text-slate-400">Phone Number</label>
                 <input
@@ -5937,7 +5997,7 @@ ${buildUserContextBrief(uid)}`;
             const selected = registeredUsers.find(u => u.uid === adminPlayerSystemUid);
             const selectedStats = selected ? getPlayerStats(selected.uid) : null;
             return (
-              <div className="space-y-4">
+              <div className="urff-auth-form space-y-4">
                 <div className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-3`}>
                   <p className="text-xs font-black flex items-center space-x-1.5"><Trophy className="w-4 h-4 text-amber-400" /><span>Player Rank Configuration</span></p>
                   <div className="grid grid-cols-3 gap-2">
@@ -6787,11 +6847,10 @@ ${buildUserContextBrief(uid)}`;
                           <button key={uid} onClick={() => setAdminSupportSelectedUid(uid)} className={`w-full text-left ${t.card} border ${t.border} rounded-xl p-3 flex items-center justify-between`}>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-bold">{info ? info.name : uid} <span className="text-slate-500 font-mono font-normal">({uid})</span></p>
-                              <p className="text-[11px] text-slate-500 truncate">{lastMsg ? `${lastMsg.sender === 'user' ? '' : (lastMsg.sender === 'admin' ? 'Apni: ' : 'AI: ')}${lastMsg.text}` : ''}</p>
+                              <p className="text-[11px] text-slate-500 truncate">{lastMsg ? `${lastMsg.sender === 'user' ? '' : (lastMsg.sender === 'admin' ? 'Apni: ' : 'Auto: ')}${lastMsg.text}` : ''}</p>
                             </div>
-                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ml-2 ${thread.aiEnabled !== false ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/40' : 'bg-slate-600/30 text-slate-400 border-slate-500/40'}`}>
-                              {thread.aiEnabled !== false ? 'AI ON' : 'AI OFF'}
-                            </span>
+                            {(() => { const real = [...(thread.messages || [])].reverse().find(x => !x.auto); return real && real.sender === 'user'
+                              ? <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ml-2 bg-red-500/20 text-red-400 border-red-500/40">উত্তর বাকি</span> : null; })()}
                           </button>
                         );
                       })
@@ -6803,12 +6862,7 @@ ${buildUserContextBrief(uid)}`;
                       <button onClick={() => setAdminSupportSelectedUid(null)} className="flex items-center space-x-1.5 text-xs font-bold">
                         <ArrowLeft className="w-4 h-4" /><span>{selectedUserInfo ? selectedUserInfo.name : adminSupportSelectedUid}</span>
                       </button>
-                      <button
-                        onClick={() => toggleAiForThread(adminSupportSelectedUid)}
-                        className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${(selectedThread.aiEnabled !== false) ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/40' : 'bg-slate-600/30 text-slate-400 border-slate-500/40'}`}
-                      >
-                        AI Auto-Reply: {(selectedThread.aiEnabled !== false) ? 'ON' : 'OFF'}
-                      </button>
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-full border bg-emerald-500/20 text-emerald-400 border-emerald-500/40">● আপনি অনলাইন</span>
                     </div>
                     {(() => {
                       const blockInfo = getSupportBlockInfo(adminSupportSelectedUid);
@@ -7094,7 +7148,7 @@ ${buildUserContextBrief(uid)}`;
           </div>
           <button onClick={() => setShowNotifications(true)} className="relative p-1.5">
             <Bell className="w-5 h-5 text-slate-400" />
-            {myNotifications.length > 0 && <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full" />}
+            {myNotifications.some(n => !(notifState.readIds || []).includes(String(n.id))) && <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full" />}
           </button>
           <button onClick={() => setActiveTab('wallet')} className={`${t.card} border ${t.border} rounded-full px-3 py-1.5 flex items-center space-x-1`}>
             <Wallet className="w-3.5 h-3.5 text-emerald-400" />
@@ -8547,6 +8601,8 @@ ${buildUserContextBrief(uid)}`;
 
       {showAskProblem && (() => {
         const thread = supportChats[user.uid] || { messages: [], aiEnabled: true };
+        const sent24 = (thread.messages || []).filter(m => m.sender === 'user' && (m.createdAtMs || 0) > Date.now() - 86400000).length;
+        const limitReached = sent24 >= 50;
         return (
           <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setShowAskProblem(false)}>
             <div className={`${t.card} w-full max-w-sm rounded-2xl border ${t.border} max-h-[85vh] flex flex-col overflow-hidden`} onClick={(e) => e.stopPropagation()}>
@@ -8555,7 +8611,11 @@ ${buildUserContextBrief(uid)}`;
                   <button onClick={() => setShowAskProblem(false)} className="p-1"><ArrowLeft className="w-5 h-5 text-slate-400" /></button>
                   <div>
                     <h3 className="font-bold text-sm">Ask Your Problem</h3>
-                    <p className="text-[10px] text-slate-500">AI shohai + admin ekhane reply dey</p>
+                    <p className="text-[10px] text-slate-500 flex items-center flex-wrap gap-x-1.5">
+                      <span className={`inline-block w-2 h-2 rounded-full ${adminOnline ? 'bg-emerald-500' : 'bg-slate-500'}`} />
+                      <span className={adminOnline ? 'text-emerald-400 font-semibold' : ''}>{adminOnline ? 'অ্যাডমিন অনলাইনে আছেন' : 'অ্যাডমিন এখন অফলাইনে'}</span>
+                      <span>• আজকের বাকি মেসেজ: {Math.max(0, 50 - sent24)}/50</span>
+                    </p>
                   </div>
                 </div>
                 <button onClick={() => setShowAskProblem(false)}><X className="w-5 h-5 text-slate-400" /></button>
@@ -8563,7 +8623,7 @@ ${buildUserContextBrief(uid)}`;
 
               <div className="px-5 pb-3 overflow-y-auto overscroll-contain flex-1 space-y-2" style={{ WebkitOverflowScrolling: 'touch' }}>
                 {thread.messages.length === 0 ? (
-                  <p className="text-xs text-slate-500 text-center py-6">Apnar proshno ba shomossha ekhane likhun, chobi pathan, ba voice message rekord korun — AI shohai shathe shathe uttor debe, ba admin nijei reply korben.</p>
+                  <p className="text-xs text-slate-500 text-center py-6">আপনার প্রশ্ন বা সমস্যা এখানে লিখুন, ছবি পাঠান বা ভয়েস মেসেজ রেকর্ড করুন। অ্যাডমিন দেখে উত্তর দেবেন।</p>
                 ) : (
                   thread.messages.map((m, idx) => (
                     <div key={idx} className={`flex ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -8572,7 +8632,7 @@ ${buildUserContextBrief(uid)}`;
                         m.sender === 'admin' ? 'bg-emerald-600 text-white' :
                         `${darkMode ? 'bg-slate-800' : 'bg-slate-200'} ${t.text}`
                       }`}>
-                        {m.sender !== 'user' && <p className="text-[9px] font-bold opacity-70 mb-0.5">{m.sender === 'admin' ? 'Admin' : 'AI Assistant'}</p>}
+                        {m.sender !== 'user' && <p className="text-[9px] font-bold opacity-70 mb-0.5">{m.sender === 'admin' ? 'অ্যাডমিন' : 'URFF সাপোর্ট (স্বয়ংক্রিয়)'}</p>}
                         {m.type === 'image' && m.imageUrl && (
                           <img src={m.imageUrl} alt="" className="rounded-lg max-w-full mb-1" />
                         )}
@@ -8594,6 +8654,11 @@ ${buildUserContextBrief(uid)}`;
                 )}
               </div>
 
+              {limitReached && (
+                <div className="mx-4 mb-2 p-3 rounded-xl bg-amber-950 border border-amber-700 text-[11px] text-amber-200 flex-shrink-0">
+                  আপনি আজকের জন্য সর্বোচ্চ ৫০টি মেসেজের সীমা শেষ করে ফেলেছেন। আগামী ২৪ ঘণ্টার সময়সীমা অনুযায়ী আবার মেসেজ পাঠাতে পারবেন।
+                </div>
+              )}
               {(() => {
                 const blockInfo = getSupportBlockInfo(user.uid);
                 if (!blockInfo) return null;
@@ -8608,8 +8673,9 @@ ${buildUserContextBrief(uid)}`;
               <div className="p-4 pt-2 flex-shrink-0 flex items-center space-x-2 border-t border-slate-800/50">
                 <button
                   type="button"
+                  disabled={limitReached}
                   onClick={() => userChatImageInputRef.current && userChatImageInputRef.current.click()}
-                  className={`w-10 h-10 flex-shrink-0 ${t.input} border rounded-xl flex items-center justify-center`}
+                  className={`w-10 h-10 flex-shrink-0 ${t.input} border rounded-xl flex items-center justify-center disabled:opacity-40`}
                 >
                   <ImageIcon className="w-4 h-4 text-indigo-400" />
                 </button>
@@ -8622,19 +8688,21 @@ ${buildUserContextBrief(uid)}`;
                 />
                 <button
                   type="button"
+                  disabled={limitReached && !isRecordingVoice}
                   onClick={() => isRecordingVoice ? stopVoiceRecording(false) : startVoiceRecording(false)}
-                  className={`w-10 h-10 flex-shrink-0 rounded-xl flex items-center justify-center border ${isRecordingVoice ? 'bg-red-600 border-red-600 animate-pulse' : t.input}`}
+                  className={`w-10 h-10 flex-shrink-0 rounded-xl flex items-center justify-center border disabled:opacity-40 ${isRecordingVoice ? 'bg-red-600 border-red-600 animate-pulse' : t.input}`}
                 >
                   <Bot className={`w-4 h-4 ${isRecordingVoice ? 'text-white' : 'text-indigo-400'}`} />
                 </button>
                 <input
                   value={supportChatInput}
+                  disabled={limitReached}
                   onChange={(e) => setSupportChatInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleSendSupportMessage(); }}
-                  placeholder={isRecordingVoice ? 'Recording...' : 'Apnar proshno likhun...'}
-                  className={`flex-1 ${t.input} border p-2.5 rounded-xl text-xs`}
+                  placeholder={limitReached ? 'আজকের মেসেজ সীমা শেষ' : isRecordingVoice ? 'রেকর্ড হচ্ছে...' : 'আপনার সমস্যা লিখুন...'}
+                  className={`flex-1 ${t.input} border p-2.5 rounded-xl text-xs disabled:opacity-50`}
                 />
-                <button onClick={handleSendSupportMessage} className="w-10 h-10 flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 rounded-xl flex items-center justify-center">
+                <button onClick={handleSendSupportMessage} disabled={limitReached} className="w-10 h-10 flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 rounded-xl flex items-center justify-center disabled:opacity-40">
                   <Send className="w-4 h-4 text-white" />
                 </button>
               </div>
@@ -8729,28 +8797,49 @@ ${buildUserContextBrief(uid)}`;
         </div>
       )}
 
+      {notifQueue.length > 0 && (() => {
+        const n = notifQueue[0];
+        const dismiss = () => { setNotifSwipeX(0); setNotifQueue(q => q.slice(1)); };
+        return (
+          <div className="fixed top-3 left-3 right-3 z-[500] flex justify-center pointer-events-none">
+            <style>{`@keyframes urffNotifIn{from{opacity:0;transform:translateY(-14px)}to{opacity:1;transform:none}}@media (prefers-reduced-motion: reduce){.urff-notif{animation:none!important}}`}</style>
+            <div className={`urff-notif pointer-events-auto w-full max-w-sm rounded-2xl border ${t.border} ${t.card} shadow-2xl p-3.5 flex items-start space-x-2.5`}
+              style={{ transform: `translateX(${notifSwipeX}px)`, opacity: 1 - Math.min(Math.abs(notifSwipeX) / 220, 0.8), animation: 'urffNotifIn 240ms ease-out', touchAction: 'pan-y' }}
+              onTouchStart={(e) => { notifTouchRef.current = e.touches[0].clientX; }}
+              onTouchMove={(e) => { if (notifTouchRef.current !== null) setNotifSwipeX(e.touches[0].clientX - notifTouchRef.current); }}
+              onTouchEnd={() => { const dx = notifSwipeX; notifTouchRef.current = null; if (Math.abs(dx) > 80) dismiss(); else setNotifSwipeX(0); }}>
+              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { markNotifRead([n]); dismiss(); openNotifTarget(n); }}>
+                <p className="text-sm font-black break-words">{n.title}</p>
+                <p className="text-xs text-slate-400 mt-0.5 break-words whitespace-pre-line">{n.message}</p>
+              </div>
+              <button type="button" onClick={() => { markNotifRead([n]); dismiss(); }} className="p-1 flex-shrink-0"><X className="w-4 h-4 text-slate-400" /></button>
+            </div>
+          </div>
+        );
+      })()}
+
       {showNotifications && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setShowNotifications(false)}>
+        <div className="fixed inset-0 z-[300] bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => { markNotifRead(myNotifications); setShowNotifications(false); }}>
           <div className={`${t.card} w-full max-w-sm rounded-2xl border ${t.border} max-h-[80vh] flex flex-col overflow-hidden`} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-5 pb-3 flex-shrink-0">
-              <h3 className="font-bold text-sm">Notifications</h3>
-              <button onClick={() => setShowNotifications(false)}><X className="w-5 h-5 text-slate-400" /></button>
+              <h3 className="font-black text-base">নোটিফিকেশন</h3>
+              <button onClick={() => { markNotifRead(myNotifications); setShowNotifications(false); }}><X className="w-5 h-5 text-slate-400" /></button>
             </div>
             <div className="px-5 pb-5 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' }}>
                             {myNotifications.length === 0 ? (
-                <p className="text-xs text-slate-500 text-center py-6">Kono notification nei.</p>
+                <p className="text-xs text-slate-500 text-center py-6">কোনো নোটিফিকেশন নেই।</p>
               ) : (
                 <div className="space-y-2">
                   <button onClick={handleClearAllNotifications} className="w-full py-2 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-xs font-bold">
-                    Shob Notification Delete Korun
+                    সব নোটিফিকেশন মুছে ফেলুন
                   </button>
                   {myNotifications.map(n => (
-                    <div key={n.id} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-0.5 relative`}>
-                      <button onClick={() => handleDeleteNotification(n.id)} className="absolute top-2 right-2 text-slate-500">
+                    <div key={n.id} onClick={() => { markNotifRead([n]); openNotifTarget(n); }} className={`${darkMode ? 'bg-slate-950' : 'bg-slate-100'} rounded-xl p-3 space-y-0.5 relative ${n.route ? 'cursor-pointer' : ''} ${(notifState.readIds || []).includes(String(n.id)) ? '' : 'border-l-4 border-indigo-500'}`}>
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteNotification(n.id); }} className="absolute top-2 right-2 text-slate-500">
                         <X className="w-3.5 h-3.5" />
                       </button>
-                      <p className="text-xs font-bold pr-5">{n.title}</p>
-                      <p className="text-[11px] text-slate-400">{n.message}</p>
+                      <p className="text-[13px] font-black pr-5 break-words">{n.title}</p>
+                      <p className="text-[11px] text-slate-400 break-words whitespace-pre-line">{n.message}</p>
                       <p className="text-[10px] text-slate-600">{n.time}</p>
                     </div>
                   ))}
