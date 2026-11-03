@@ -3406,14 +3406,14 @@ export default function App() {
       setShowJoinModal(false);
       setJoinTeamEntries([{ ign: '', uid: '' }]);
       playSound('join');
-      showToast('Match e sofolbhabe join korechen!');
+      showToast('Match এ সফল ভাবে join করেছেন। 🥳✅!');
     }).catch((err) => {
       if (err.message === 'SLOTS_FULL') {
-        showToast('Ei match er slot ekhoni full hoye geche! Taka kata hoyni.');
+        showToast('এই Match এর Slot এখনই Full  হয়ে গেছে, টাকা 💸 কাটা হয়নি। ✅.');
       } else if (err.message === 'ALREADY_STARTED') {
-        showToast('Match already start hoye geche! Taka kata hoyni.');
+        showToast('Match অলরেডি Start 🔘 হয়ে গেছে,  টাকা কাটা হয়নি।✅.');
       } else {
-        showToast('Join korte problem hoyeche, abar try korun.');
+        showToast('Join করতে প্রবলেম 😭 হচ্ছে, আবার ট্রাই কর। ✅.');
       }
       setShowJoinModal(false);
     });
