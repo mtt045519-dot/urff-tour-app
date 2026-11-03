@@ -3462,8 +3462,8 @@ export default function App() {
     } catch (e) {
       const lm = limitMessage(e);
       if (lm) showToast(lm);
-      else if (e && e.message === 'DUPLICATE_TRX') showToast('Ei Transaction ID age e use kora hoyeche!');
-      else { console.error(e); showToast('Network somossa, abar chesta korun'); }
+      else if (e && e.message === 'DUPLICATE_TRX') showToast('এই Transaction ID আগে ইউজ করা হয়েছে। ⚠️!');
+      else { console.error(e); showToast('Network সমস্যা, আবার চেষ্টা করুন।✅'); }
       return;
     }
     setPendingDeposits([depObj, ...pendingDeposits]);
@@ -3480,7 +3480,7 @@ export default function App() {
     setTrxIdInput('');
     setSenderNumberInput('');
     playSound('coin');
-    showToast('Deposit request admin er kache pathano hoyeche!');
+    showToast('Deposit request এডমিনের কাছে পাঠানো হয়েছে ✅!');
   };
 
   const handleWithdrawSubmit = async () => {
