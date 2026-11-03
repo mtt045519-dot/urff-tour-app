@@ -3113,7 +3113,7 @@ export default function App() {
       const gUser = result.user;
       const gEmail = (gUser.email || '').trim();
       if (!gEmail) {
-        showToast('Google account theke email paoya jayni. Abar chesta korun.');
+        showToast('Google account থেকে Email পাওয়া যায়নি 😭🚫. আবার চেষ্টা করুন ✅.');
         return;
       }
       const taken = registeredUsers.some(u =>
@@ -3123,7 +3123,7 @@ export default function App() {
       if (taken) {
         setRegGoogle(null);
         setRegGmail('');
-        showToast('Ei Google account diye age thekei account khola ache. Login korun.');
+        showToast('এই google একাউন্ট দিয়ে আগে থেকেই অ্যাকাউন্ট খোলা আছে ।⚠️ Login করুন ✅ .');
         return;
       }
       setRegGoogle({ uid: gUser.uid, email: gEmail });
@@ -3138,29 +3138,29 @@ export default function App() {
 
   const handleRegister = () => {
     if (!regGoogle) {
-      showToast('Age "Google diye verify korun" button e click korun.');
+      showToast('আগে "Google দিয়ে verify korun" button  এ click করুন ✅.');
       return;
     }
     if (!regUsername || !regNumber || !regPassword) {
-      showToast('Shob field puron korun');
+      showToast('সব field পূরণ করুন ✅');
       return;
     }
     if (registeredUsers.some(u =>
       (u.googleUid && u.googleUid === regGoogle.uid) ||
       (u.email || '').trim().toLowerCase() === regGoogle.email.toLowerCase()
     )) {
-      showToast('Ei Google account diye age thekei account khola ache.');
+      showToast('এই Google account দিয়ে আগে থেকেই account খোলা আছে ⚠️.');
       return;
     }
     const accountsWithNumber = registeredUsers.filter(u => u.number === regNumber);
     if (accountsWithNumber.length >= 3) {
-      showToast('Ei number diye maximum 3 ti account khola jabe!');
+      showToast('এই number দিয়ে maximum 3 টা account খোলা যাবে।✅!');
       return;
     }
     // No two accounts anywhere may share the same password — this also guarantees the
     // (max 3) accounts under one phone number never end up with matching passwords.
     if (registeredUsers.some(u => u.password === regPassword)) {
-      showToast('Ei password already onno ekta account e use hoyeche. Onno password din.');
+      showToast('এই password ইতিমধ্যে অন্য একটা account  এ ব্যবহার হয়েছে ⚠️. অন্য  password দিন।✅.');
       return;
     }
 
@@ -3209,7 +3209,7 @@ export default function App() {
     setRegGoogle(null);
     setRegGmail('');
 
-    showToast('Registration successful! Apnar account e ৳5 bonus jog kora hoyeche.');
+    showToast('Registration successful! আপনার account এ ৳5 bonus যোগ করা হয়েছে।✅🤩😍.');
     setActiveTab('home');
   };
 
