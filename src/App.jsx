@@ -3428,7 +3428,7 @@ export default function App() {
     const handleAddMoneySubmit = async () => {
     const amt = parseFloat(amountInput);
     if (!amt || amt <= 0 || !trxIdInput || !senderNumberInput.trim()) {
-      showToast('Sothik poriman, TrxID ebong Number din');
+      showToast('সঠিক Amount, TrxID এবং Number দিন');
       return;
     }
     const { eff: txTypeEff } = getAddMoneyType();
@@ -3487,15 +3487,15 @@ export default function App() {
     const amt = parseFloat(amountInput);
     const totalBalance = user.depositBalance + user.winningBalance;
     if (!amt || amt < 100) {
-      showToast('Sorbonimne 100 taka withdraw request dewa jabe');
+      showToast('সর্বনিম্ন ১০০ টাকা withdraw request দেওয়া যাবে। ✅');
       return;
     }
     if (totalBalance < amt) {
-      showToast('Apnar total balance e eto taka nei!');
+      showToast('আপনার টোটাল ব্যালেন্স এত টাকা💵নেই। 💔!');
       return;
     }
     if (!withdrawAccountInput.trim()) {
-      showToast('Apnar account number din');
+      showToast('আপনার অ্যাকাউন্ট নাম্বার দিন। ✅');
       return;
     }
     if (pendingWithdrawals.some(w => w.uid === user.uid)) {
@@ -3532,7 +3532,7 @@ export default function App() {
     setAmountInput('');
     setWithdrawAccountInput('');
     playSound('coin');
-    showToast('Withdraw request admin er kache pathano hoyeche!');
+    showToast('Withdraw Request এডমিনের কাছে পাঠানো হয়েছে।✅!');
   };
 
   const handleShopOrderSubmit = () => {
