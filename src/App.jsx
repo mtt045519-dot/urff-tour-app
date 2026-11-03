@@ -7555,7 +7555,7 @@ export default function App() {
               ))}
             </div>
             {shown.length === 0 ? (
-              <p className="text-xs text-slate-500 text-center py-12">Ajker kono result nei. Notun result ashle ekhane dekha jabe.</p>
+              <p className="text-xs text-slate-500 text-center py-12">🇧🇩 বাংলায়:এখনো কোনো ফলাফল প্রকাশ করা হয়নি। নতুন কোনো আপডেট বা ফলাফল আসলেই তা এখানে দেখতে পাবেন! 🔍✨. ইংরেজিতে:No results yet. As soon as new results are available, they will appear right here! ⏳🚀.</p>
             ) : shown.map(it => (
               <div key={it.id} className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-3`}>
                 <div className="flex items-start justify-between">
