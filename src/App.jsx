@@ -3025,6 +3025,86 @@ export default function App() {
 
   // Step 1 of registration: the person must prove they own a Google account.
   // One Google account can only ever create one app account.
+  const [googleBusy, setGoogleBusy] = useState(false);
+
+  const completeGoogleLogin = (found) => {
+    const nowMs = Date.now();
+    if (found.banUntil === 'permanent' || (typeof found.banUntil === 'number' && found.banUntil > nowMs)) {
+      showToast(`আপনার অ্যাকাউন্ট ব্যান করা আছে।${found.banReason ? ' কারণ: ' + found.banReason : ''}`);
+      return false;
+    }
+    if (typeof found.banUntil === 'number' && found.banUntil <= nowMs) {
+      updateDoc(doc(db, 'users', found.uid), { banUntil: null, banReason: '' }).catch(e => console.error(e));
+    }
+    const loggedInUser = {
+      name: found.name, number: found.number || '', email: found.email, uid: found.uid, avatar: found.avatar || '',
+      depositBalance: found.depositBalance || 0, winningBalance: found.winningBalance || 0,
+      totalDeposited: found.totalDeposited || 0, totalWithdrawn: found.totalWithdrawn || 0,
+    };
+    setUser(loggedInUser);
+    setHasActiveSession(true);
+    localStorage.setItem('urff_session', JSON.stringify(loggedInUser));
+    playSound('login');
+    setActiveTab('home');
+    return true;
+  };
+
+  // Google দিয়ে সরাসরি Login অথবা প্রথমবার হলে Registration
+  const handleGoogleContinue = async () => {
+    if (googleBusy) return;
+    setGoogleBusy(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, provider);
+      const gUser = result.user;
+      const gEmail = (gUser.email || '').trim();
+      if (!gEmail) { showToast('এই Google অ্যাকাউন্টে ইমেইল পাওয়া যায়নি।'); setGoogleBusy(false); return; }
+
+      let found = null;
+      const byUid = await getDocs(query(collection(db, 'users'), where('googleUid', '==', gUser.uid)));
+      if (!byUid.empty) found = byUid.docs[0].data();
+      if (!found) {
+        const byMail = await getDocs(query(collection(db, 'users'), where('email', '==', gEmail)));
+        if (!byMail.empty) {
+          const cand = byMail.docs[0].data();
+          if (cand.emailVerified === true) found = cand;
+          else { showToast('এই ইমেইলে আগের একটি অ্যাকাউন্ট আছে। অনুগ্রহ করে নম্বর ও পাসওয়ার্ড দিয়ে লগইন করুন।'); setGoogleBusy(false); return; }
+        }
+      }
+      if (found) {
+        if (completeGoogleLogin(found)) showToast('Google দিয়ে লগইন সফল হয়েছে!');
+        setGoogleBusy(false);
+        return;
+      }
+
+      // প্রথমবার: নতুন অ্যাকাউন্ট খোলা
+      let uid = null;
+      for (let k = 0; k < 40; k++) {
+        const cand = 'GM' + Math.floor(1000 + Math.random() * 9000);
+        if (!registeredUsers.some(u => u.uid === cand)) { uid = cand; break; }
+      }
+      if (!uid) { showToast('অ্যাকাউন্ট তৈরি করা যায়নি, আবার চেষ্টা করুন।'); setGoogleBusy(false); return; }
+      const rand = Array.from(crypto.getRandomValues(new Uint8Array(12))).map(b => b.toString(16).padStart(2, '0')).join('');
+      const newUserObj = {
+        name: gUser.displayName || gEmail.split('@')[0], number: '', password: 'g_' + rand,
+        email: gEmail, googleUid: gUser.uid, emailVerified: true, signupMethod: 'google',
+        uid, avatar: '', depositBalance: 0, winningBalance: 5, totalDeposited: 0, totalWithdrawn: 0, createdAtMs: Date.now(),
+      };
+      const refCode = ((regReferralCode || '') + '').trim() || ((() => { try { return localStorage.getItem('urff_ref') || ''; } catch (e) { return ''; } })()).trim();
+      if (refCode && registeredUsers.some(u => u.uid === refCode)) newUserObj.referredBy = refCode;
+      setRegisteredUsers([...registeredUsers, newUserObj]);
+      await setDoc(doc(db, 'users', uid), newUserObj);
+      try { localStorage.removeItem('urff_ref'); } catch (e) { /* ignore */ }
+      completeGoogleLogin(newUserObj);
+      showToast('Google দিয়ে রেজিস্ট্রেশন সফল! আপনার অ্যাকাউন্টে ৳5 বোনাস যোগ হয়েছে।');
+    } catch (err) {
+      const code = String((err && err.code) || '');
+      if (!code.includes('popup-closed') && !code.includes('cancelled-popup')) showToast('Google দিয়ে লগইন হয়নি। ইন্টারনেট দেখে আবার চেষ্টা করুন।');
+    }
+    setGoogleBusy(false);
+  };
+
   const handleGoogleVerify = async () => {
     try {
       const provider = new GoogleAuthProvider();
@@ -3316,6 +3396,8 @@ export default function App() {
         number: user.number,
         mode: selectedMatch.mode,
         entryFeePaid: totalFee,
+        deductedDeposit: deductDeposit,
+        deductedWinning: deductWinning,
         players: entries,
         joinedAt: new Date().toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }),
         joinedAtMs: Date.now()
@@ -4027,10 +4109,52 @@ export default function App() {
     }
   };
 
-  const handleDeleteTournament = (id) => {
-    setTournaments(tournaments.filter(t => t.id !== id));
+  const handleDeleteTournament = async (id) => {
+    const mt = tournaments.find(x => x.id === id);
+    // খেলা শুরু হয়নি ও ফলাফল দেওয়া হয়নি = টাকা ফেরত দিতে হবে
+    const finished = !!mt && (mt.started || mt.status === 'live' || mt.status === 'completed' || !!matchResultsHistory[id]);
+    if (mt && !finished) {
+      try {
+        const snap = await getDocs(query(collection(db, 'joinEntries'), where('matchId', '==', id)));
+        if (!snap.empty) {
+          let total = 0;
+          snap.docs.forEach(d => { total += Number(d.data().entryFeePaid) || 0; });
+          if (!window.confirm(`এই ম্যাচে ${snap.size}টি এন্ট্রি আছে। ডিলিট করলে সবার মোট ৳${total} ওয়ালেটে ফেরত যাবে। নিশ্চিত?`)) return;
+          for (const d of snap.docs) {
+            const e = d.data();
+            const amount = Number(e.entryFeePaid) || 0;
+            await runTransaction(db, async (tx) => {
+              const lockRef = doc(db, 'refundLocks', d.id);          // একই এন্ট্রির টাকা দুইবার ফেরত যাবে না
+              const userRef = doc(db, 'users', String(e.accountUid));
+              const [lock, us] = await Promise.all([tx.get(lockRef), tx.get(userRef)]);
+              if (!lock.exists()) {
+                if (us.exists() && amount > 0) {
+                  const hasSplit = e.deductedDeposit !== undefined && e.deductedDeposit !== null;
+                  const dd = hasSplit ? Number(e.deductedDeposit) || 0 : amount; // পুরনো এন্ট্রিতে ভাগ জানা নেই: Deposit Balance-এ
+                  const dw = hasSplit ? Number(e.deductedWinning) || 0 : 0;
+                  tx.update(userRef, { depositBalance: increment(dd), winningBalance: increment(dw) });
+                  const nid = 'not_' + Date.now() + Math.floor(Math.random() * 1000);
+                  tx.set(doc(db, 'notifications', nid), {
+                    id: nid, title: 'ম্যাচ বাতিল, টাকা ফেরত ✅',
+                    message: `"${mt.title}" ম্যাচটি বাতিল করা হয়েছে। আপনার ৳${amount} ওয়ালেটে ফেরত দেওয়া হয়েছে।`,
+                    time: 'Just now', targetUid: e.accountUid, createdAtMs: Date.now(),
+                  });
+                }
+                tx.set(lockRef, { matchId: id, uid: e.accountUid, amount, atMs: Date.now() });
+              }
+              tx.delete(d.ref);
+            });
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        showToast('কিছু টাকা ফেরত দেওয়া যায়নি, তাই ম্যাচ মোছা হয়নি। আবার চেষ্টা করুন।');
+        return;
+      }
+    }
+    setTournaments(prev => prev.filter(x => x.id !== id));
     deleteDoc(doc(db, 'tournaments', id)).catch(e => console.error(e));
-    showToast('Tournament remove kora hoyeche!');
+    showToast(mt && !finished ? 'ম্যাচ মোছা হয়েছে এবং সবাইকে টাকা ফেরত দেওয়া হয়েছে!' : 'Tournament remove kora hoyeche!');
   };
 
   // ---------- Command to Automated: repeat a tournament every day at the same time ----------
@@ -4795,6 +4919,15 @@ export default function App() {
 
           {activeTab === 'login' ? (
             <div className="urff-auth-form space-y-4">
+              <button
+                type="button"
+                onClick={handleGoogleContinue}
+                disabled={googleBusy}
+                className="w-full py-3 bg-white text-slate-900 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 disabled:opacity-60"
+              >
+                <span className="font-black text-sm" style={{ color: '#4285F4' }}>G</span><span>Google দিয়ে সরাসরি Register করুন</span>
+              </button>
+              <div className="flex items-center space-x-2"><div className="flex-1 h-px bg-slate-800" /><span className="text-[10px] text-slate-500">অথবা নিচের ফর্ম পূরণ করুন</span><div className="flex-1 h-px bg-slate-800" /></div>
               <div>
                 <label className="text-xs text-slate-400">Phone Number</label>
                 <input
@@ -4821,6 +4954,16 @@ export default function App() {
                 className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg"
               >
                 LOGIN
+              </button>
+
+              <div className="flex items-center space-x-2"><div className="flex-1 h-px bg-slate-800" /><span className="text-[10px] text-slate-500">অথবা</span><div className="flex-1 h-px bg-slate-800" /></div>
+              <button
+                type="button"
+                onClick={handleGoogleContinue}
+                disabled={googleBusy}
+                className="w-full py-3 bg-white text-slate-900 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 disabled:opacity-60"
+              >
+                <span className="font-black text-sm" style={{ color: '#4285F4' }}>G</span><span>Google দিয়ে Continue করুন</span>
               </button>
 
               <p className="text-center text-xs text-slate-400 pt-2">
