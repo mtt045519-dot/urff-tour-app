@@ -3246,7 +3246,7 @@ export default function App() {
       showToast('Login successful!');
       setActiveTab('home');
     } else {
-      showToast('Bhul number ba password!');
+      showToast('Wrong number or password⚠️!');
     }
   };
 
@@ -3312,15 +3312,15 @@ export default function App() {
         return { ok: true, bonusDays: bonusDays + 1 };
       });
       if (!res.ok) {
-        showToast(res.reason === 'limit' ? 'Check-in bonus shesh hoye geche.' : 'Ajke apni already check-in korechen! 24 ghonta por abar asun.');
+        showToast(res.reason === 'limit' ? 'Check-in bonus শেষ হয়ে গেছে ✅ .' : 'আজকে আপনি ইতিমধ্যে check-in  করেছেন! ২৪ ঘন্টা ⏱️ পর আবার আসুন ।✅.');
       } else {
         applyBalanceChange(user.uid, { winning: CHECKIN_DAILY_REWARD });
         if (res.bonusDays >= CHECKIN_BONUS_LIMIT) { try { localStorage.setItem(_ciKey(user.uid), '1'); } catch {} setCheckInCachedDone(true); }
-        showToast(`+\u09f3${CHECKIN_DAILY_REWARD} check-in bonus peyechen!`);
+        showToast(`+\u09f3${CHECKIN_DAILY_REWARD} check-in bonus পেয়েছেন✅!`);
       }
     } catch (e) {
       console.error('Check-in error:', e);
-      showToast('Check-in fail: internet check korun ebong abar chesta korun.');
+      showToast('Check-in fail: internet check করুন, এবং আবার চেষ্টা করুন।✅ .');
     } finally {
       _checkInBusyRef.current = false;
       setShowCheckInModal(false);
@@ -3332,23 +3332,23 @@ export default function App() {
     const entries = joinTeamEntries.slice(0, playerCount);
     const incomplete = entries.some(p => !p.ign.trim() || !p.uid.trim());
     if (incomplete || entries.length < playerCount) {
-      showToast(`Sob ${playerCount} jon player-er Free Fire IGN ebong UID din`);
+      showToast(`Sob ${playerCount} jon player-এর Free Fire id name এবং UID দিন।✅`);
       return;
     }
     if (isJoinedByMe(selectedMatch.id)) {
-      showToast('Apni already ei match e join korechen!');
+      showToast('আপনি ইতিমধ্যে এই Match এ জয়েন করেছেন।✅!');
       setShowJoinModal(false);
       return;
     }
 
     if (selectedMatch.slotsFilled + playerCount > selectedMatch.totalSlots) {
-      showToast('Ei match er jonno protto slot nei!');
+      showToast('এই Match জন্য পর্যাপ্ত Slot নেই। ❌😭!');
       setShowJoinModal(false);
       return;
     }
 
     if (selectedMatch.started) {
-      showToast('Ei match already start hoye geche, ekhon join kora jabe na!');
+      showToast('এই Match ইতিমধ্যে Start হয়ে গেছে, এখন জয়েন করা যাবে না।❌😭!');
       setShowJoinModal(false);
       return;
     }
@@ -3356,7 +3356,7 @@ export default function App() {
     const totalFee = selectedMatch.entryFee * playerCount;
     const totalWallet = user.depositBalance + user.winningBalance;
     if (totalWallet < totalFee) {
-      showToast('Oporjapto balance!');
+      showToast('অপর্যাপ্ত ব্যালেন্স 💔!');
       return;
     }
 
