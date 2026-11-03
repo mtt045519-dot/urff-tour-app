@@ -8021,7 +8021,7 @@ export default function App() {
 
             <div className="space-y-3">
               {myMatches.length === 0 ? (
-                <p className="text-xs text-slate-500 text-center py-10">Apni ekhono kono match e join koren ni.</p>
+                <p className="text-xs text-slate-500 text-center py-10">📍আপনি এখনো কোনো ম্যাচে জয়েন করেননি।📍You haven't joined any matches yet.</p>
               ) : (
                 myResultsList.map(({ mt, myEntry }) => (
                   <div key={mt.id} onClick={() => { setMatchDetailView(mt); setShowTotalPrizeInfo(false); }} className={`${t.card} border ${t.border} rounded-2xl p-4 space-y-2 cursor-pointer`}>
