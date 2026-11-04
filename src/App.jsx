@@ -4467,11 +4467,11 @@ export default function App() {
       window.setTimeout(() => {
         if (mediaRecorderRef.current === recorder && recorder.state !== 'inactive') {
           stopVoiceRecording(forAdmin);
-          showToast('Voice note 30 second-e limit kora hoyeche.');
+          showToast('Voice note 30 second- এ limit করা হয়েছে.');
         }
       }, 30000);
     } catch (err) {
-      showToast('Microphone access pawa jayni. Browser permission check korun.');
+      showToast('Microphone access পাওয়া যায়নি।⚠️ Browser permission check করুণ ✅.');
     }
   };
 
@@ -4513,11 +4513,11 @@ export default function App() {
     try {
       await setDoc(doc(db, 'supportChats', uid), { supportBlock, updatedAtMs: Date.now() }, { merge: true });
     } catch (e) { console.error('Support block save error:', e); showToast('Block save fail: ' + (e && e.code ? e.code : 'error')); return; }
-    setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Ask Your Problem Closed', message: `Apnar "Ask Your Problem" option bondho kora hoyeche. Karon: ${reason}. ${until === 'permanent' ? 'Permanent.' : 'Khulbe: ' + fmtBlockUntil(until)}`, time: 'Just now', targetUid: uid }, ...prev]);
+    setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Ask Your Problem Closed', message: `আপনার "Ask Your Problem" বন্ধ করা হয়েছে । 🚫 কারণ: ${reason}. ${until === 'permanent' ? 'Permanent.' : 'খুলবে: ' + fmtBlockUntil(until)}`, time: 'Just now', targetUid: uid }, ...prev]);
     setSupportBlockOpen(false);
     setSupportBlockReason('');
     playSound('warn');
-    showToast('User ke Ask Your Problem theke block kora hoyeche.');
+    showToast('User ক Ask Your Problem থেকে Block করা হয়েছে.');
   };
   const handleUnblockSupport = async (uid) => {
     _setSupportChats(prev => ({ ...prev, [uid]: { ...(prev[uid] || { messages: [], aiEnabled: true }), supportBlock: null } }));
@@ -4526,7 +4526,7 @@ export default function App() {
     } catch (e) { console.error('Support unblock save error:', e); showToast('Unblock save fail: ' + (e && e.code ? e.code : 'error')); return; }
     setUserNotifications(prev => [{ id: 'not_' + Date.now(), title: 'Ask Your Problem Opened', message: 'Apnar "Ask Your Problem" option abar chalu kora hoyeche.', time: 'Just now', targetUid: uid }, ...prev]);
     playSound('success');
-    showToast('User ke unblock kora hoyeche. Se abar message dite parbe.');
+    showToast('User কে unblock করা হয়েছে.সে আবার Massage দিতে পারবে ✅.');
   };
 
   const toggleAiForThread = async (uid) => {
