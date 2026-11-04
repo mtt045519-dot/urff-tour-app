@@ -3221,7 +3221,7 @@ export default function App() {
         const untilText = found.banUntil === 'permanent'
           ? 'permanently'
           : `until ${new Date(found.banUntil).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true })}`;
-        showToast(`Apnar account ${untilText} ban kora hoyeche.${found.banReason ? ' Karon: ' + found.banReason : ''}`);
+        showToast(`আপনার account ${untilText} ban করা হয়েছে.${found.banReason ? ' কারণ: ' + found.banReason : ''}`);
         return;
       }
       // A timed ban that has already ended is cleared automatically.
